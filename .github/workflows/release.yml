@@ -111,6 +111,7 @@ jobs:
 
       - name: Enforce signed release policy
         env:
+          REQUIRE_SIGNED_RELEASE: ${{ vars.REQUIRE_SIGNED_RELEASE }}
           ALLOW_UNSIGNED_RELEASE: ${{ vars.ALLOW_UNSIGNED_RELEASE }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -118,15 +119,19 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${ALLOW_UNSIGNED_RELEASE:-false}" == "true" ]]; then
-            echo "::warning::ALLOW_UNSIGNED_RELEASE=true，正式发布将使用 ad-hoc 签名且不做公证。"
+            echo "::warning::ALLOW_UNSIGNED_RELEASE=true，将使用 ad-hoc 签名且不做公证。"
+            exit 0
+          fi
+          if [[ "${REQUIRE_SIGNED_RELEASE:-false}" != "true" ]]; then
+            echo "::warning::个人模式：未强制签名/公证，将生成 ad-hoc 包。若需要严格发布，请设置仓库变量 REQUIRE_SIGNED_RELEASE=true 并配置证书与公证 Secrets。"
             exit 0
           fi
           if [[ -z "${SIGN_IDENTITY:-}" || "${SIGN_IDENTITY}" == "-" ]]; then
-            echo "::error::正式发布必须配置 MACOS_CERTIFICATE；如仅用于测试，请设置仓库变量 ALLOW_UNSIGNED_RELEASE=true。"
+            echo "::error::已启用 REQUIRE_SIGNED_RELEASE=true，但未配置 MACOS_CERTIFICATE。"
             exit 1
           fi
           if [[ -z "${APPLE_ID:-}" || -z "${APPLE_TEAM_ID:-}" || -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
-            echo "::error::正式发布必须配置 Apple 公证凭据（APPLE_ID / APPLE_TEAM_ID / APPLE_APP_SPECIFIC_PASSWORD）。"
+            echo "::error::已启用 REQUIRE_SIGNED_RELEASE=true，但未配置 Apple 公证凭据。"
             exit 1
           fi
           echo "::notice::Developer ID + notarization policy satisfied."

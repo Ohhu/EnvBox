@@ -152,12 +152,12 @@ git push origin main --tags
 - 先运行轻量 gate：非 `vMAJOR.MINOR.PATCH` 标签（例如 `v1.0.0-beta`）直接跳过，不编译。
 - 正式标签还会校验 `VERSION` 与标签一致。
 - 构建 arm64 + x86_64 通用 App、运行单元测试、生成 DMG/ZIP 和 SHA256。
-- 正式发布默认强制要求 Developer ID 证书和 Apple 公证凭据；缺失时构建失败，避免把 ad-hoc 包当作正式版本发布。仓库变量 `ALLOW_UNSIGNED_RELEASE=true` 可显式放行测试构建。
-- 配置签名 Secrets 后，自动导入 Developer ID 证书、签名并公证 App 和 DMG。
+- 个人仓库默认允许 unsigned 发布：未配置签名 Secrets 时生成 ad-hoc 包，Release 说明会明确标注；不要求付费 Apple Developer 账号。
+- 如需严格发布，设置仓库变量 `REQUIRE_SIGNED_RELEASE=true`，此时缺少 Developer ID / 公证凭据会直接失败。配置签名 Secrets 后会自动导入证书、签名并公证 App 和 DMG。
 - 通过 GitHub CLI 创建 Release 并上传产物。
 - `release` Environment 可配置 required reviewers / 受保护 tag，进一步限制谁可以发布。
 
-### 发布 Secrets（正式发布必需）
+### 发布 Secrets（可选；需要无 Gatekeeper 警告的分发时配置）
 
 | Secret | 用途 |
 | --- | --- |
@@ -168,7 +168,7 @@ git push origin main --tags
 | `APPLE_TEAM_ID` | Apple Developer Team ID |
 | `APPLE_APP_SPECIFIC_PASSWORD` | App 专用密码 |
 
-正式发布默认要求以上证书与公证 Secrets 全部配置；只有显式设置仓库变量 `ALLOW_UNSIGNED_RELEASE=true` 时，才会发布 ad-hoc 构建并在 Release 说明中标注。建议在 GitHub 仓库设置中为 `release` Environment 添加 required reviewers，并保护 `v*` 标签。
+个人使用无需配置以上 Secrets：默认会发布 ad-hoc 构建，用户首次打开需右键 → 打开。若你希望强制签名/公证，设置仓库变量 `REQUIRE_SIGNED_RELEASE=true` 并配置全部 Secrets；此时缺项会让 workflow 失败，而不是悄悄发布未签名包。建议在 GitHub 仓库设置中为 `release` Environment 添加 required reviewers，并保护 `v*` 标签。
 
 ## 项目结构
 

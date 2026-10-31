@@ -11,9 +11,10 @@
    git push origin v1.0.0
    ```
 
-6. The release workflow runs the gate, tests, universal build, mandatory Developer ID signing and notarization,
-   DMG/ZIP packaging and GitHub Release creation. Configure the `release` Environment with required reviewers
-   and protect `v*` tags. Set repository variable `ALLOW_UNSIGNED_RELEASE=true` only for explicit test builds.
+6. The release workflow runs the gate, tests, universal build, signing/notarization when configured, DMG/ZIP
+   packaging and GitHub Release creation. Personal repositories default to ad-hoc packages; set repository
+   variable `REQUIRE_SIGNED_RELEASE=true` to make missing Developer ID/notarization credentials fail the build.
+   Configure the `release` Environment with required reviewers and protect `v*` tags.
 7. Verify the release assets and download the DMG on a clean Mac if possible.
 
 Tags such as `v1.0.0-rc1` intentionally do not build. Only `vMAJOR.MINOR.PATCH` is a formal release.
