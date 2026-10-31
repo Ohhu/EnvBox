@@ -1,0 +1,31 @@
+# Xcode / SwiftPM
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Build output
+dist/
+build/
+*.dmg
+*.zip
+*.xcarchive
+
+# Secrets & local state
+.envbox
+*.p12
+*.cer
+*.mobileprovision
+ExportOptions.plist
+.swift-home/
+.module-cache/
+.tmp/
+
+# macOS
+.DS_Store
+._*
+
+# Editors
+.vscode/
+.idea/

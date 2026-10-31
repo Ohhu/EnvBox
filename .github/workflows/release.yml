@@ -1,0 +1,240 @@
+name: Release
+
+# Official releases only. Branch pushes and pull requests never start a build.
+# A tag such as v1.0.0-beta still reaches the tiny gate job, but the build job is skipped.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: envbox-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Validate stable tag
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.check.outputs.publish }}
+      version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag semantics
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::'$tag' 不是正式版本标签（vMAJOR.MINOR.PATCH），跳过编译与发布。"
+            exit 0
+          fi
+
+          version="${tag#v}"
+          declared="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$version" != "$declared" ]]; then
+            echo "::error::标签 $tag 与 VERSION 文件（$declared）不一致。"
+            exit 1
+          fi
+
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "::notice::Preparing official release $tag"
+
+  build:
+    name: Build and publish
+    needs: gate
+    if: needs.gate.outputs.publish == 'true'
+    runs-on: macos-15
+    timeout-minutes: 45
+    environment: release
+    env:
+      VERSION: ${{ needs.gate.outputs.version }}
+      TAG: ${{ needs.gate.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+          sw_vers
+
+      - name: Run tests
+        run: swift test --disable-sandbox
+
+      - name: Import Developer ID certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${MACOS_CERTIFICATE:-}" ]]; then
+            echo "::warning::MACOS_CERTIFICATE 未配置，使用 ad-hoc 签名。"
+            exit 0
+          fi
+
+          CERT_PATH="$RUNNER_TEMP/envbox-cert.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/envbox-signing.keychain-db"
+          KEYCHAIN_PASSWORD="${KEYCHAIN_PASSWORD:-$(openssl rand -hex 24)}"
+
+          echo "$MACOS_CERTIFICATE" | base64 -D > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | sed -n 's/.*"\(.*\)"/\1/p' | head -n 1)"
+          if [[ -z "$IDENTITY" ]]; then
+            echo "::error::开发者证书已导入，但未找到可用的代码签名身份。"
+            exit 1
+          fi
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "::notice::Using signing identity: $IDENTITY"
+          rm -f "$CERT_PATH"
+
+      - name: Enforce signed release policy
+        env:
+          ALLOW_UNSIGNED_RELEASE: ${{ vars.ALLOW_UNSIGNED_RELEASE }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ "${ALLOW_UNSIGNED_RELEASE:-false}" == "true" ]]; then
+            echo "::warning::ALLOW_UNSIGNED_RELEASE=true，正式发布将使用 ad-hoc 签名且不做公证。"
+            exit 0
+          fi
+          if [[ -z "${SIGN_IDENTITY:-}" || "${SIGN_IDENTITY}" == "-" ]]; then
+            echo "::error::正式发布必须配置 MACOS_CERTIFICATE；如仅用于测试，请设置仓库变量 ALLOW_UNSIGNED_RELEASE=true。"
+            exit 1
+          fi
+          if [[ -z "${APPLE_ID:-}" || -z "${APPLE_TEAM_ID:-}" || -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
+            echo "::error::正式发布必须配置 Apple 公证凭据（APPLE_ID / APPLE_TEAM_ID / APPLE_APP_SPECIFIC_PASSWORD）。"
+            exit 1
+          fi
+          echo "::notice::Developer ID + notarization policy satisfied."
+
+      - name: Build universal app
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./Scripts/build-app.sh
+
+      - name: Notarize app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: ./Scripts/notarize-app.sh
+
+      - name: Package DMG and ZIP
+        run: ./Scripts/package-release.sh
+
+      - name: Notarize DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: ./Scripts/notarize-dmg.sh
+
+      - name: Refresh checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          shasum -a 256 ./*.dmg ./*.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Prepare release notes
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${SIGN_IDENTITY:-}" && "${SIGN_IDENTITY}" != "-" && -n "${APPLE_ID:-}" && -n "${APPLE_TEAM_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
+            distribution_note="已使用 Developer ID 签名并完成 Apple 公证，可直接安装。"
+          elif [[ -n "${SIGN_IDENTITY:-}" ]]; then
+            distribution_note="已使用 Developer ID 签名，但未完成 Apple 公证。首次打开可能仍会被 Gatekeeper 拦截。"
+          else
+            distribution_note="当前发布未配置 Developer ID 证书和 Apple 公证，使用 ad-hoc 签名。首次打开请右键 App 选择“打开”。"
+          fi
+
+          cat > dist/release-notes.md <<EOF
+          ## EnvBox $VERSION
+
+          原生 macOS 环境变量管理器，支持加密配置库、配置快速切换与本机环境自动采集。
+
+          ### 安装
+
+          1. 下载 `EnvBox-$VERSION-macOS-universal.dmg`
+          2. 打开后把 EnvBox 拖入 Applications
+          3. 启动 EnvBox，按需启用 Zsh / Bash 集成并应用配置
+
+          > $distribution_note
+
+          ### 系统要求
+
+          - macOS 14 Sonoma 或更高版本
+          - Apple Silicon 与 Intel 通用二进制
+
+          ### 校验
+
+          ```
+          $(cat dist/SHA256SUMS.txt)
+          ```
+
+          ### 安全说明
+
+          - 本地配置库使用 AES-256-GCM，加密密钥保存在 macOS 钥匙串。
+          - 导入/导出文件使用 PBKDF2-HMAC-SHA256（600,000 次迭代）+ AES-256-GCM。
+          - 应用不包含网络代码或遥测。
+          - 启用 Shell 集成后，应用配置会生成权限为 0600 的 `~/.envbox/active.zsh`，其中变量值为明文；移除集成会删除该文件。
+          EOF
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: EnvBox-${{ needs.gate.outputs.version }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/SHA256SUMS.txt
+            dist/release-notes.md
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            "dist/EnvBox-$VERSION-macOS-universal.dmg" \
+            "dist/EnvBox-$VERSION-macOS-universal.zip" \
+            "dist/SHA256SUMS.txt" \
+            --title "EnvBox $VERSION" \
+            --notes-file dist/release-notes.md \
+            --verify-tag \
+            --latest
+
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/envbox-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/envbox-cert.p12"
