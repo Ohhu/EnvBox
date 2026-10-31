@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 VERSION="${VERSION:-$(tr -d '[:space:]' < VERSION)}"
-DMG="$ROOT/dist/EnvBox-$VERSION-macOS-universal.dmg"
+DMG="$ROOT/dist/EnvBox-$VERSION-macOS-arm64.dmg"
 
 if [[ -z "${SIGN_IDENTITY:-}" || "${SIGN_IDENTITY}" == "-" ]]; then
     echo "==> Developer ID signing not configured; skipping notarization."

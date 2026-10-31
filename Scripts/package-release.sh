@@ -8,8 +8,8 @@ VERSION="${VERSION:-$(tr -d '[:space:]' < VERSION)}"
 APP_PATH="$ROOT/dist/EnvBox.app"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 STAGING="$ROOT/dist/dmg-staging"
-DMG="$ROOT/dist/EnvBox-$VERSION-macOS-universal.dmg"
-ZIP="$ROOT/dist/EnvBox-$VERSION-macOS-universal.zip"
+DMG="$ROOT/dist/EnvBox-$VERSION-macOS-arm64.dmg"
+ZIP="$ROOT/dist/EnvBox-$VERSION-macOS-arm64.zip"
 CHECKSUM="$ROOT/dist/SHA256SUMS.txt"
 
 if [[ ! -d "$APP_PATH" ]]; then

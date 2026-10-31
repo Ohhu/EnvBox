@@ -19,7 +19,7 @@
 - **加密导入导出**：使用独立密码保护的可移植 `.envbox` 文件。
 - **macOS 原生体验**：SwiftUI、原生材质、跟随系统明暗外观、减少动态效果支持、键盘快捷键。
 - **隐私优先**：无网络请求、无遥测、无第三方 SDK；敏感值默认遮盖；敏感剪贴板 45 秒自动清除。
-- **正式版本自动发布**：GitHub Actions 仅在严格 `vMAJOR.MINOR.PATCH` 标签上构建并发布通用二进制。
+- **正式版本自动发布**：GitHub Actions 仅在严格 `vMAJOR.MINOR.PATCH` 标签上构建并发布 arm64 二进制。
 
 <details>
 <summary><strong>更多界面截图：系统环境 / 暗色模式 / 加密导出</strong></summary>
@@ -45,12 +45,12 @@
 ## 系统要求
 
 - macOS 14 Sonoma 或更高版本
-- Apple Silicon 或 Intel Mac
+- Apple Silicon Mac（arm64）
 - 从源码构建需要 Xcode 16+ 或 Swift 6 toolchain（测试使用 Swift Testing）
 
 ## 安装
 
-从 [Releases](https://github.com/Ohhu/EnvBox/releases) 下载最新 `EnvBox-x.y.z-macOS-universal.dmg`，拖入 Applications 即可。
+从 [Releases](https://github.com/Ohhu/EnvBox/releases) 下载最新 `EnvBox-x.y.z-macOS-arm64.dmg`，拖入 Applications 即可。
 
 如果首次启动被系统拦截，请在 Finder 中右键 App 并选择“打开”。
 
@@ -118,8 +118,8 @@ swift test
 ./Scripts/build-app.sh
 open dist/EnvBox.app
 
-# 通用二进制 + DMG + ZIP
-UNIVERSAL=1 VERSION=1.0.0 ./Scripts/build-app.sh
+# arm64 + DMG + ZIP
+VERSION=1.0.0 ./Scripts/build-app.sh
 VERSION=1.0.0 ./Scripts/package-release.sh
 ```
 

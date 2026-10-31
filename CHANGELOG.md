@@ -2,6 +2,12 @@
 
 All notable changes to EnvBox are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- Build and release artifacts are now arm64-only.
+
 ## [1.0.0] - 2026-10-31
 
 ### Added

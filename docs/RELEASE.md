@@ -11,7 +11,7 @@
    git push origin v1.0.0
    ```
 
-6. The release workflow runs the gate, tests, universal build, signing/notarization when configured, DMG/ZIP
+6. The release workflow runs the gate, tests, arm64 build, signing/notarization when configured, DMG/ZIP
    packaging and GitHub Release creation. Personal repositories default to ad-hoc packages; set repository
    variable `REQUIRE_SIGNED_RELEASE=true` to make missing Developer ID/notarization credentials fail the build.
    Configure the `release` Environment with required reviewers and protect `v*` tags.

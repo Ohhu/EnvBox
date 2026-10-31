@@ -131,7 +131,7 @@ jobs:
           fi
           echo "::notice::Developer ID + notarization policy satisfied."
 
-      - name: Build universal app
+      - name: Build arm64 app
         env:
           BUILD_NUMBER: ${{ github.run_number }}
         run: ./Scripts/build-app.sh
@@ -180,7 +180,7 @@ jobs:
 
           ### 安装
 
-          1. 下载 `EnvBox-{{VERSION}}-macOS-universal.dmg`
+          1. 下载 `EnvBox-{{VERSION}}-macOS-arm64.dmg`
           2. 打开后把 EnvBox 拖入 Applications
           3. 启动 EnvBox，按需启用 Zsh 集成并应用配置
 
@@ -231,8 +231,8 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$TAG" \
-            "dist/EnvBox-$VERSION-macOS-universal.dmg" \
-            "dist/EnvBox-$VERSION-macOS-universal.zip" \
+            "dist/EnvBox-$VERSION-macOS-arm64.dmg" \
+            "dist/EnvBox-$VERSION-macOS-arm64.zip" \
             "dist/SHA256SUMS.txt" \
             --title "EnvBox $VERSION" \
             --notes-file dist/release-notes.md \
