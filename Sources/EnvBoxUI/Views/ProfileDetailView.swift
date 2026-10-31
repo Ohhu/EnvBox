@@ -176,7 +176,7 @@ struct ProfileDetailView: View {
             }
             .buttonStyle(EnvBoxSecondaryButtonStyle())
             .disabled(model.isApplying || !model.isVaultUnlocked)
-            .help("重新写入 launchd 环境与 Shell 激活文件")
+            .help("重新写入系统环境")
         } else {
             Button {
                 model.requestApply(profile.id)
@@ -189,7 +189,7 @@ struct ProfileDetailView: View {
             }
             .buttonStyle(EnvBoxPrimaryButtonStyle())
             .disabled(model.isApplying || !model.isVaultUnlocked)
-            .help("写入 launchd 环境并更新 ~/.envbox/active.zsh")
+            .help("写入系统环境")
         }
     }
 
@@ -233,7 +233,7 @@ struct ProfileDetailView: View {
             InfoBanner(
                 icon: "terminal",
                 title: "新终端还不会自动读取配置",
-                message: "应用配置会写入 launchd。要让它对新的 Zsh 终端生效，请启用一次性 Shell 集成。",
+                message: "应用配置会写入系统环境。要让新的 Zsh 终端自动读取，请启用 Shell 集成。",
                 tint: EnvBoxTheme.aqua,
                 actionTitle: "启用集成",
                 isWorking: model.isTogglingShellIntegration,
@@ -335,7 +335,7 @@ struct ProfileDetailView: View {
         HStack(spacing: 6) {
             Image(systemName: "lock.fill")
                 .font(.system(size: 8.5))
-            Text("配置使用 AES-256-GCM 加密，修改会自动保存到本机。")
+            Text("修改会自动保存。")
                 .font(.system(size: 10))
             Spacer()
             if profile.enabledVariables.isEmpty {

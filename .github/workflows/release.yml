@@ -112,18 +112,13 @@ jobs:
       - name: Enforce signed release policy
         env:
           REQUIRE_SIGNED_RELEASE: ${{ vars.REQUIRE_SIGNED_RELEASE }}
-          ALLOW_UNSIGNED_RELEASE: ${{ vars.ALLOW_UNSIGNED_RELEASE }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
           set -euo pipefail
-          if [[ "${ALLOW_UNSIGNED_RELEASE:-false}" == "true" ]]; then
-            echo "::warning::ALLOW_UNSIGNED_RELEASE=true，将使用 ad-hoc 签名且不做公证。"
-            exit 0
-          fi
           if [[ "${REQUIRE_SIGNED_RELEASE:-false}" != "true" ]]; then
-            echo "::warning::个人模式：未强制签名/公证，将生成 ad-hoc 包。若需要严格发布，请设置仓库变量 REQUIRE_SIGNED_RELEASE=true 并配置证书与公证 Secrets。"
+            echo "::warning::未配置签名凭据，将生成 ad-hoc 包。"
             exit 0
           fi
           if [[ -z "${SIGN_IDENTITY:-}" || "${SIGN_IDENTITY}" == "-" ]]; then
@@ -173,11 +168,9 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "${SIGN_IDENTITY:-}" && "${SIGN_IDENTITY}" != "-" && -n "${APPLE_ID:-}" && -n "${APPLE_TEAM_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
-            distribution_note="已使用 Developer ID 签名并完成 Apple 公证，可直接安装。"
-          elif [[ -n "${SIGN_IDENTITY:-}" ]]; then
-            distribution_note="已使用 Developer ID 签名，但未完成 Apple 公证。首次打开可能仍会被 Gatekeeper 拦截。"
+            distribution_note=""
           else
-            distribution_note="当前发布未配置 Developer ID 证书和 Apple 公证，使用 ad-hoc 签名。首次打开请右键 App 选择“打开”。"
+            distribution_note="> 首次启动如被系统拦截，请在 Finder 中右键选择“打开”。"
           fi
 
           cat > dist/release-notes.md <<EOF
@@ -189,9 +182,9 @@ jobs:
 
           1. 下载 `EnvBox-$VERSION-macOS-universal.dmg`
           2. 打开后把 EnvBox 拖入 Applications
-          3. 启动 EnvBox，按需启用 Zsh / Bash 集成并应用配置
+          3. 启动 EnvBox，按需启用 Zsh 集成并应用配置
 
-          > $distribution_note
+          $distribution_note
 
           ### 系统要求
 
@@ -200,16 +193,13 @@ jobs:
 
           ### 校验
 
-          ```
-          $(cat dist/SHA256SUMS.txt)
-          ```
+          校验值见随附的 `SHA256SUMS.txt`。
 
           ### 安全说明
 
-          - 本地配置库使用 AES-256-GCM，加密密钥保存在 macOS 钥匙串。
-          - 导入/导出文件使用 PBKDF2-HMAC-SHA256（600,000 次迭代）+ AES-256-GCM。
-          - 应用不包含网络代码或遥测。
-          - 启用 Shell 集成后，应用配置会生成权限为 0600 的 `~/.envbox/active.zsh`，其中变量值为明文；移除集成会删除该文件。
+          - 配置库与导出文件均加密保存；主密钥存放在 macOS 钥匙串。
+          - 应用不联网、不包含遥测。
+          - 启用 Shell 集成后，`~/.envbox/active.zsh` 会以明文保存变量（权限 0600）；移除集成会删除该文件。
           EOF
 
       - name: Upload artifacts

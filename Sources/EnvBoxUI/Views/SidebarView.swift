@@ -254,7 +254,7 @@ struct SidebarView: View {
                         .font(.system(size: 9.5, weight: .semibold))
                         .foregroundStyle(EnvBoxTheme.rose)
                     } else {
-                        Text("AES-256-GCM · Keychain")
+                        Text("仅此设备")
                             .font(.system(size: 9, weight: .medium, design: .rounded))
                             .foregroundStyle(EnvBoxTheme.textSecondary(for: scheme).opacity(0.8))
                     }
@@ -281,8 +281,8 @@ struct SidebarView: View {
     private var saveStateTitle: String {
         if !model.isVaultUnlocked { return "配置库未解锁" }
         switch model.saveState {
-        case .saving: return "正在加密保存…"
-        case .saved: return "已加密保存"
+        case .saving: return "正在保存…"
+        case .saved: return "已保存"
         case .failed: return "保存失败"
         case .idle: return "本地配置库"
         }

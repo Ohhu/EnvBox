@@ -47,7 +47,7 @@ struct SettingsView: View {
                 icon: "bolt.fill",
                 tint: EnvBoxTheme.mint,
                 title: "启动时恢复当前配置",
-                description: "打开 EnvBox 时将当前配置重新写入 launchd。macOS 重启后环境会丢失，建议保留。",
+                description: "打开 EnvBox 时重新应用当前配置；macOS 重启后系统环境可能会重置。",
                 isOn: Binding(
                     get: { model.payload.settings.autoRestoreActiveProfile },
                     set: { model.setAutoRestore($0) }
@@ -151,7 +151,7 @@ struct SettingsView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 9))
                         .foregroundStyle(EnvBoxTheme.amber)
-                    Text("仅在启用 Shell 集成时写入 active.zsh；它必须以明文保存（权限 0600），只有当前用户可读。移除集成会删除该文件。")
+                    Text("启用 Shell 集成后会生成 active.zsh（明文，权限 0600）；移除集成会删除它。")
                         .font(.system(size: 9.5))
                         .foregroundStyle(EnvBoxTheme.textSecondary(for: scheme))
                         .fixedSize(horizontal: false, vertical: true)
@@ -179,14 +179,14 @@ struct SettingsView: View {
         SettingsCard(title: "安全与隐私", icon: "lock.shield.fill") {
             VStack(alignment: .leading, spacing: 13) {
                 HStack(spacing: 10) {
-                    securityBadge(icon: "lock.fill", title: "AES-256-GCM", subtitle: "本地配置库")
-                    securityBadge(icon: "key.fill", title: "macOS Keychain", subtitle: "随机 256 位主密钥")
-                    securityBadge(icon: "function", title: "PBKDF2", subtitle: "600,000 次迭代")
+                    securityBadge(icon: "lock.fill", title: "AES-256", subtitle: "配置库加密")
+                    securityBadge(icon: "key.fill", title: "钥匙串", subtitle: "主密钥")
+                    securityBadge(icon: "iphone.slash", title: "仅此设备", subtitle: "不参与同步")
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
                     SettingsPathLabel(label: "配置库位置", path: model.vaultFileURL.path)
-                    Text("本地配置库只保存密文；主密钥存放在当前用户的登录钥匙串中，不写入应用数据。")
+                    Text("配置库只保存密文，解密密钥在登录钥匙串中。")
                         .font(.system(size: 9.5))
                         .foregroundStyle(EnvBoxTheme.textSecondary(for: scheme))
                         .fixedSize(horizontal: false, vertical: true)
@@ -228,7 +228,7 @@ struct SettingsView: View {
                     Button("GitHub") { model.openGitHub() }
                         .buttonStyle(EnvBoxSecondaryButtonStyle())
                 }
-                Text("原生 SwiftUI 环境变量管理器。配置默认只保存在本机，不联网、不包含遥测。Shell 集成与 launchd 写入都需要你明确操作。")
+                Text("配置只保存在本机，不联网、无遥测。")
                     .font(.system(size: 10.5))
                     .foregroundStyle(EnvBoxTheme.textSecondary(for: scheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -239,18 +239,28 @@ struct SettingsView: View {
 
     private var shellTitle: String {
         guard let status = model.shellStatus else { return "正在检查…" }
-        if !status.isSupported { return "当前 Shell：\(status.shellName)（不支持）" }
-        return status.isInstalled ? "\(status.shellName) 集成已启用" : "\(status.shellName) 集成未启用"
+        let name = displayShellName(status.shellName)
+        if !status.isSupported { return "当前 Shell：\(name)（不支持）" }
+        return status.isInstalled ? "\(name) 集成已启用" : "\(name) 集成未启用"
     }
 
     private var shellDescription: String {
-        guard let status = model.shellStatus else { return "读取 ~/.zshrc 状态" }
+        guard let status = model.shellStatus else { return "读取 Shell 配置状态" }
+        let name = displayShellName(status.shellName)
         if !status.isSupported {
-            return "EnvBox 支持 Zsh / Bash 的自动加载片段。你仍可应用配置到 launchd，但请自行在 \(status.shellName) 中加载 ~/.envbox/active.zsh。"
+            return "EnvBox 的自动集成目前仅支持 Zsh。你仍可把配置应用到系统环境，但请自行在 \(name) 中加载 ~/.envbox/active.zsh。"
         }
         return status.isInstalled
-            ? "新开的 \(status.shellName) 终端会自动载入配置。移除集成会删除激活脚本，但不会删除已经应用的 launchd 变量。"
-            : "写入一段带标记的 \(status.rcURL.lastPathComponent) 片段，只影响新开的 \(status.shellName) 终端；可随时移除。"
+            ? "新开的 \(name) 终端会自动载入配置。移除集成会删除激活脚本，但不会清除已经应用的系统环境变量。"
+            : "写入一段带标记的 \(status.rcURL.lastPathComponent) 片段，只影响新开的 \(name) 终端；可随时移除。"
+    }
+
+    private func displayShellName(_ name: String) -> String {
+        switch name.lowercased() {
+        case "zsh": return "Zsh"
+        case "bash": return "Bash"
+        default: return name
+        }
     }
 
     private var shellIcon: String {

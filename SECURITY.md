@@ -19,6 +19,8 @@ EnvBox manages secrets that are often present in a developer's shell. The design
 
 - The macOS user account is trusted.
 - The operating system, Keychain and code signing chain are trusted.
+- EnvBox is not App Sandboxed because it must edit `~/.zshrc` and invoke `launchctl`; it uses Hardened Runtime
+  and minimal entitlements instead.
 - A compromised user session or malware with the user's privileges is out of scope.
 - Environment variables are inherently visible to processes that inherit them; EnvBox cannot hide values
   from the applications that receive them.
@@ -27,7 +29,7 @@ EnvBox manages secrets that are often present in a developer's shell. The design
 
 - Document: JSON envelope with format, version, Keychain key ID and ciphertext.
 - Encryption: AES-256-GCM with a fresh random nonce for every save. Authenticated additional data:
-  `EnvBox.Vault.v1`.
+  `EnvBox.Vault.v1|keyID=...`.
 - Key: 32 random bytes generated with `SecRandomCopyBytes`, stored as a generic password in the login
   Keychain, non-synchronizing, accessible only while the device is unlocked and only on this device.
 - Keychain access is scoped to the EnvBox service and account. The key is never written to app data or logs.
@@ -57,8 +59,8 @@ EnvBox manages secrets that are often present in a developer's shell. The design
   (`[A-Za-z_][A-Za-z0-9_]*`). Values cannot inject shell syntax or command substitution.
 - Environment variable names and values are validated for length, NUL bytes and duplicates.
 - `launchctl` is invoked with fixed, absolute paths.
-- Reading the environment starts the user's login Zsh, which executes their own startup files. This is
-  opt-in configurable and never evaluates variable values.
+- Reading the environment starts the user's login shell (Zsh or Bash), which executes their own startup
+  files. This is opt-in configurable and never evaluates variable values.
 - The activation script `~/.envbox/active.zsh` is only written when Shell integration is installed. It is
   required to be plaintext for shells to read it, is created with directory mode `0700` and file mode
   `0600`, and contains a warning comment. Removing integration deletes it. Applying a profile while

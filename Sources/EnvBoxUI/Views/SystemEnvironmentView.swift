@@ -145,7 +145,7 @@ struct SystemEnvironmentView: View {
             InfoBanner(
                 icon: "terminal",
                 title: "当前 Shell 为 \(status.shellName)",
-                message: "EnvBox 的自动 Shell 集成目前仅支持 Zsh。配置仍会写入 launchd 环境，但新终端需要手动启停配置。",
+                message: "EnvBox 的自动 Shell 集成目前仅支持 Zsh。配置仍会应用到系统环境，但新终端需要手动启停配置。",
                 tint: EnvBoxTheme.textSecondary(for: scheme)
             )
         }
@@ -242,7 +242,7 @@ struct SystemEnvironmentView: View {
         HStack(spacing: 6) {
             Image(systemName: "lock.fill")
                 .font(.system(size: 8.5))
-            Text("系统快照只读，不会写入配置库。保存为配置后即可编辑并加密保存。")
+            Text("系统快照只读，不会写入配置库。")
                 .font(.system(size: 10))
             Spacer()
             if let status = model.shellStatus, status.isInstalled {
@@ -262,8 +262,7 @@ struct SystemEnvironmentView: View {
             return "正在读取当前进程与登录 Shell 环境…"
         }
         let time = snapshot.capturedAt.formatted(date: .omitted, time: .standard)
-        let duration = String(format: "%.2f", snapshot.duration)
-        return "来自\(sourceLabel) · \(time) 更新 · 耗时 \(duration)s"
+        return "来自\(sourceLabel) · \(time) 更新"
     }
 
     private var sourceLabel: String {

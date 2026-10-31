@@ -88,7 +88,6 @@ struct TransferSheet: View {
                     .foregroundStyle(EnvBoxTheme.textSecondary(for: scheme))
             }
             Spacer()
-            Pill(text: "AES-256-GCM", icon: "lock.fill", tint: EnvBoxTheme.mint)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 18)
@@ -152,7 +151,7 @@ struct TransferSheet: View {
                 .frame(height: 38)
                 .background(fieldBackground(isFocused: focusedField == .passphrase))
                 .onSubmit { if canSubmit && !isWorking { submit() } }
-            Text(isExport ? "密码仅用于此文件，不会写入磁盘或钥匙串。" : "密码不会保存；连续失败不会锁定文件。")
+            Text(isExport ? "密码仅用于此文件，不会写入磁盘或钥匙串。" : "密码不会保存。")
                 .font(.system(size: 9.5))
                 .foregroundStyle(EnvBoxTheme.textSecondary(for: scheme))
         }
@@ -205,7 +204,7 @@ struct TransferSheet: View {
             Text(
                 isExport
                     ? "请妥善保存密码。文件只包含密文，忘记密码后 EnvBox 也无法恢复。"
-                    : "导入会新增配置，不会覆盖现有配置。同名配置会自动重命名，变量会生成新的内部标识。"
+                    : "导入会新增配置，不会覆盖现有配置。同名配置会自动重命名。"
             )
             .font(.system(size: 10.5))
             .foregroundStyle(EnvBoxTheme.textSecondary(for: scheme))
@@ -222,9 +221,6 @@ struct TransferSheet: View {
     private var footer: some View {
         VStack(spacing: 10) {
             HStack(spacing: 9) {
-                Text("PBKDF2-HMAC-SHA256 · 600,000 次")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(EnvBoxTheme.textSecondary(for: scheme))
                 Spacer()
                 Button("取消") { dismiss() }
                     .buttonStyle(EnvBoxSecondaryButtonStyle())

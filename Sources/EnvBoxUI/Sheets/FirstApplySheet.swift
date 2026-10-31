@@ -39,26 +39,18 @@ struct FirstApplySheet: View {
                 explanationRow(
                     icon: "terminal.fill",
                     title: "写入当前用户环境",
-                    text: "EnvBox 会通过 launchctl 写入 \(profile?.enabledVariables.count ?? 0) 个变量，并生成 ~/.envbox/active.zsh。"
+                    text: "EnvBox 会写入 \(profile?.enabledVariables.count ?? 0) 个变量；如已启用 Shell 集成，同时更新 ~/.envbox/active.zsh。"
                 )
                 explanationRow(
                     icon: "arrow.uturn.backward.circle",
                     title: "可随时恢复",
-                    text: "停用配置后，EnvBox 会清理自己写入的变量，不会改动配置文件中未管理的其他环境变量。"
+                    text: "停用配置后，EnvBox 只清理自己写入的变量。"
                 )
                 explanationRow(
                     icon: "clock.arrow.circlepath",
                     title: "只影响新进程",
-                    text: "已经运行的终端和 App 不会改变。新终端还需要启用 Zsh 集成才能自动载入。"
+                    text: "已经运行的终端和 App 不会改变。新终端可在设置中启用 Zsh 集成。"
                 )
-
-                HStack(spacing: 8) {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 10))
-                    Text("这是第一次应用，之后切换配置会立即执行。")
-                        .font(.system(size: 10))
-                }
-                .foregroundStyle(EnvBoxTheme.textSecondary(for: scheme))
             }
             .padding(24)
 
@@ -78,7 +70,7 @@ struct FirstApplySheet: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 15)
         }
-        .frame(width: 500, height: 440)
+        .frame(width: 500, height: 350)
         .background(.regularMaterial)
     }
 
