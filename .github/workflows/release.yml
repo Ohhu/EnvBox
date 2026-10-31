@@ -173,18 +173,18 @@ jobs:
             distribution_note="> 首次启动如被系统拦截，请在 Finder 中右键选择“打开”。"
           fi
 
-          cat > dist/release-notes.md <<EOF
-          ## EnvBox $VERSION
+          cat > dist/release-notes.md <<'EOF'
+          ## EnvBox {{VERSION}}
 
           原生 macOS 环境变量管理器，支持加密配置库、配置快速切换与本机环境自动采集。
 
           ### 安装
 
-          1. 下载 `EnvBox-$VERSION-macOS-universal.dmg`
+          1. 下载 `EnvBox-{{VERSION}}-macOS-universal.dmg`
           2. 打开后把 EnvBox 拖入 Applications
           3. 启动 EnvBox，按需启用 Zsh 集成并应用配置
 
-          $distribution_note
+          {{DISTRIBUTION_NOTE}}
 
           ### 系统要求
 
@@ -201,6 +201,17 @@ jobs:
           - 应用不联网、不包含遥测。
           - 启用 Shell 集成后，`~/.envbox/active.zsh` 会以明文保存变量（权限 0600）；移除集成会删除该文件。
           EOF
+
+          VERSION="$VERSION" DISTRIBUTION_NOTE="$distribution_note" python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          path = Path("dist/release-notes.md")
+          text = path.read_text()
+          text = text.replace("{{VERSION}}", os.environ["VERSION"])
+          text = text.replace("{{DISTRIBUTION_NOTE}}", os.environ["DISTRIBUTION_NOTE"])
+          path.write_text(text)
+          PY
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
