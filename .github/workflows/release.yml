@@ -189,7 +189,7 @@ jobs:
           ### 系统要求
 
           - macOS 14 Sonoma 或更高版本
-          - Apple Silicon 与 Intel 通用二进制
+          - Apple Silicon（arm64）
 
           ### 校验
 
