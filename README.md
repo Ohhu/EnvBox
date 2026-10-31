@@ -86,6 +86,25 @@ fi
 
 移除集成会删除该 `.zshrc` 片段和明文 `~/.envbox/active.zsh`，但不会清除已应用的系统环境变量；重新启用集成时会根据当前配置重建激活脚本。修改 `.zshrc` 前会备份到 `~/.envbox/backups/`（最多保留 5 份），若受管理标记不完整则拒绝写入。
 
+### MCP
+
+设置 → MCP 打开开关后，客户端可用 `EnvBox.app/Contents/Helpers/envbox` 作为 MCP 服务器（stdio）：
+
+| 工具 | 作用 |
+| --- | --- |
+| `env_describe` | 变量名、长度、指纹、代际 |
+| `env_exec` | 在最新配置环境中执行命令，变量在子进程内展开 |
+| `env_reveal` | 返回明文；默认关闭 |
+
+设置页切换客户端后可分别复制 JSON 或提示词。命令行等价物：
+
+```bash
+envbox mcp
+envbox describe BAIDU_COOKIES
+envbox exec -- curl -H "Cookie: $BAIDU_COOKIES" https://example.com
+envbox reveal-policy --allow
+```
+
 ### 导入与导出
 
 - 导出时可选择单个配置或全部配置，必须设置至少 8 个字符的密码。
@@ -148,9 +167,10 @@ git push origin main --tags
 
 ```text
 Sources/
-  EnvBoxCore/     加密、Keychain、配置库、Shell 读取、launchctl 应用
+  EnvBoxCore/     加密、Keychain、配置库、Shell 读取、launchctl 应用、MCP 与激活环境
   EnvBoxUI/       SwiftUI 界面、菜单栏、设置、导入导出交互
   EnvBox/         应用入口
+  EnvBoxHelper/   envbox 命令行与 MCP 服务器
 Tests/
   EnvBoxCoreTests/
 Scripts/          图标、构建、打包、公证、开发运行
@@ -161,7 +181,7 @@ docs/             README 截图、发布说明与图标
 
 ## 已知边界
 
-- 应用配置无法修改已经运行的进程环境。
+- 应用配置无法修改已经运行的进程环境；已打开的终端窗口与 agent 需重新打开，或经 MCP 读取。
 - 自动 Shell 集成目前仅支持 Zsh；其他 Shell 可手动 `source ~/.envbox/active.zsh`。
 - 系统环境变量在重启后可能丢失；EnvBox 默认在启动时恢复当前配置。
 - 配置文件密码无法找回。

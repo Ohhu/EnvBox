@@ -219,6 +219,10 @@ final class AppModel {
             }
         }
 
+        if isVaultUnlocked {
+            syncLoginItem()
+            syncMCPPolicy()
+        }
         await refreshSystemEnvironment()
         isBootstrapping = false
     }
@@ -391,6 +395,11 @@ final class AppModel {
     func hideAllSensitiveValues() {
         concealSensitiveValues()
         showToast("已隐藏所有敏感值", style: .info)
+    }
+
+    func copyKeyToClipboard(_ key: String) {
+        ClipboardService.shared.copy(key, clearAfter: nil)
+        showToast("已复制变量名", style: .success)
     }
 
     func copyToClipboard(_ value: String, sensitive: Bool) {
@@ -675,7 +684,7 @@ final class AppModel {
             if let warning = report.warnings.first {
                 showToast(warning, style: .warning)
             } else {
-                showToast("配置已应用，新打开的终端与 App 将使用新环境", style: .success)
+                showToast("配置已应用", style: .success)
             }
             Task { await refreshSystemEnvironment() }
         } catch {
@@ -700,6 +709,7 @@ final class AppModel {
         payload.appliedFingerprint = fingerprint
         activeFingerprintCache = (profile.id, fingerprint)
         payload.settings.hasCompletedFirstApply = true
+        payload.settings.hasAcknowledgedRestartHint = false
         payload.touch()
         hasUnsavedChanges = true
         let saved = await flush()
@@ -857,6 +867,86 @@ final class AppModel {
 
     private var shouldWriteShellActivation: Bool {
         payload.settings.shellIntegrationEnabled && (shellStatus?.isInstalled ?? false)
+    }
+
+    // MARK: - MCP
+
+    var mcpEnabled: Bool { payload.settings.mcpEnabled }
+    var mcpAllowReveal: Bool { payload.settings.mcpAllowReveal }
+    var mcpHelperPath: String { MCPHelper.executablePath() }
+
+    func setMCPEnabled(_ enabled: Bool) {
+        guard requireVaultUnlocked() else { return }
+        payload.settings.mcpEnabled = enabled
+        syncMCPPolicy()
+        payload.touch()
+        scheduleSave()
+        showToast(enabled ? "MCP 已启用" : "MCP 已关闭", style: enabled ? .success : .info)
+    }
+
+    func setMCPAllowReveal(_ allowed: Bool) {
+        guard requireVaultUnlocked() else { return }
+        payload.settings.mcpAllowReveal = allowed
+        syncMCPPolicy()
+        payload.touch()
+        scheduleSave()
+        showToast(allowed ? "env_reveal 已启用" : "env_reveal 已关闭", style: allowed ? .warning : .info)
+    }
+
+    func mcpSnippet(for client: MCPClient) -> String {
+        client.snippet(helperPath: mcpHelperPath)
+    }
+
+    func copyMCPSnippet(for client: MCPClient) {
+        ClipboardService.shared.copy(mcpSnippet(for: client), clearAfter: nil)
+        showToast("已复制配置", style: .success)
+    }
+
+    func copyMCPPrompt(for client: MCPClient) {
+        ClipboardService.shared.copy(client.prompt(helperPath: mcpHelperPath), clearAfter: nil)
+        showToast("已复制提示词", style: .success)
+    }
+
+    private func syncMCPPolicy() {
+        let policy = MCPPolicy(enabled: payload.settings.mcpEnabled, allowReveal: payload.settings.mcpAllowReveal)
+        try? policy.write()
+    }
+
+    // MARK: - Login item
+
+    var launchAtLogin: Bool { payload.settings.launchAtLogin }
+
+    func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            try LoginItemService.setEnabled(enabled)
+            payload.settings.launchAtLogin = enabled
+            payload.touch()
+            scheduleSave()
+            showToast(enabled ? "登录时启动已启用" : "登录时启动已关闭", style: .success)
+        } catch {
+            showAlert(title: "无法修改登录项", message: error.localizedDescription)
+        }
+    }
+
+    private func syncLoginItem() {
+        guard payload.settings.launchAtLogin, LoginItemService.isAvailable else { return }
+        if !LoginItemService.isEnabled {
+            try? LoginItemService.setEnabled(true)
+        }
+    }
+
+    // MARK: - Restart hint
+
+    var showsRestartHint: Bool {
+        payload.settings.hasCompletedFirstApply
+            && !payload.settings.hasAcknowledgedRestartHint
+            && !payload.appliedKeys.isEmpty
+    }
+
+    func acknowledgeRestartHint() {
+        payload.settings.hasAcknowledgedRestartHint = true
+        payload.touch()
+        scheduleSave()
     }
 
     // MARK: - Settings

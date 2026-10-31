@@ -95,6 +95,10 @@ public struct AppSettings: Codable, Sendable, Equatable {
     public var autoClearSensitiveClipboard: Bool
     public var hasCompletedFirstApply: Bool
     public var shellIntegrationEnabled: Bool
+    public var mcpEnabled: Bool
+    public var mcpAllowReveal: Bool
+    public var launchAtLogin: Bool
+    public var hasAcknowledgedRestartHint: Bool
 
     public init(
         autoRestoreActiveProfile: Bool = true,
@@ -103,7 +107,11 @@ public struct AppSettings: Codable, Sendable, Equatable {
         concealSensitiveValues: Bool = true,
         autoClearSensitiveClipboard: Bool = true,
         hasCompletedFirstApply: Bool = false,
-        shellIntegrationEnabled: Bool = false
+        shellIntegrationEnabled: Bool = false,
+        mcpEnabled: Bool = false,
+        mcpAllowReveal: Bool = false,
+        launchAtLogin: Bool = true,
+        hasAcknowledgedRestartHint: Bool = false
     ) {
         self.autoRestoreActiveProfile = autoRestoreActiveProfile
         self.includeLoginShellEnvironment = includeLoginShellEnvironment
@@ -112,6 +120,10 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.autoClearSensitiveClipboard = autoClearSensitiveClipboard
         self.hasCompletedFirstApply = hasCompletedFirstApply
         self.shellIntegrationEnabled = shellIntegrationEnabled
+        self.mcpEnabled = mcpEnabled
+        self.mcpAllowReveal = mcpAllowReveal
+        self.launchAtLogin = launchAtLogin
+        self.hasAcknowledgedRestartHint = hasAcknowledgedRestartHint
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -122,6 +134,10 @@ public struct AppSettings: Codable, Sendable, Equatable {
         case autoClearSensitiveClipboard
         case hasCompletedFirstApply
         case shellIntegrationEnabled
+        case mcpEnabled
+        case mcpAllowReveal
+        case launchAtLogin
+        case hasAcknowledgedRestartHint
     }
 
     public init(from decoder: Decoder) throws {
@@ -134,6 +150,10 @@ public struct AppSettings: Codable, Sendable, Equatable {
         autoClearSensitiveClipboard = try container.decodeIfPresent(Bool.self, forKey: .autoClearSensitiveClipboard) ?? defaults.autoClearSensitiveClipboard
         hasCompletedFirstApply = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedFirstApply) ?? defaults.hasCompletedFirstApply
         shellIntegrationEnabled = try container.decodeIfPresent(Bool.self, forKey: .shellIntegrationEnabled) ?? defaults.shellIntegrationEnabled
+        mcpEnabled = try container.decodeIfPresent(Bool.self, forKey: .mcpEnabled) ?? defaults.mcpEnabled
+        mcpAllowReveal = try container.decodeIfPresent(Bool.self, forKey: .mcpAllowReveal) ?? defaults.mcpAllowReveal
+        launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? defaults.launchAtLogin
+        hasAcknowledgedRestartHint = try container.decodeIfPresent(Bool.self, forKey: .hasAcknowledgedRestartHint) ?? defaults.hasAcknowledgedRestartHint
     }
 }
 

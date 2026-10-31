@@ -229,6 +229,17 @@ struct ProfileDetailView: View {
             )
         }
 
+        if model.showsRestartHint {
+            InfoBanner(
+                icon: "arrow.clockwise",
+                title: "已打开的终端仍在使用旧值",
+                message: "重新打开终端后生效。agent 通过 MCP 读取。",
+                tint: EnvBoxTheme.aqua,
+                actionTitle: "知道了",
+                action: { model.acknowledgeRestartHint() }
+            )
+        }
+
         if let status = model.shellStatus, status.isSupported, !status.isInstalled {
             InfoBanner(
                 icon: "terminal",

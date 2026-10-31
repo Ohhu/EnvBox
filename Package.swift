@@ -9,6 +9,7 @@ let package = Package(
     ],
     products: [
         .executable(name: "EnvBox", targets: ["EnvBox"]),
+        .executable(name: "envbox-helper", targets: ["EnvBoxHelper"]),
         .library(name: "EnvBoxCore", targets: ["EnvBoxCore"])
     ],
     targets: [
@@ -25,6 +26,11 @@ let package = Package(
             name: "EnvBox",
             dependencies: ["EnvBoxUI", "EnvBoxCore"],
             path: "Sources/EnvBox"
+        ),
+        .executableTarget(
+            name: "EnvBoxHelper",
+            dependencies: ["EnvBoxCore"],
+            path: "Sources/EnvBoxHelper"
         ),
         .testTarget(
             name: "EnvBoxCoreTests",

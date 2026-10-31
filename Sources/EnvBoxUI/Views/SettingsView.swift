@@ -5,6 +5,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
+    @State private var mcpClient: MCPClient = .generic
 
     var body: some View {
         ZStack {
@@ -13,6 +14,8 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     header
                     generalSection
+                        .disabled(!model.isVaultUnlocked)
+                    mcpSection
                         .disabled(!model.isVaultUnlocked)
                     shellSection
                     securitySection
@@ -51,6 +54,17 @@ struct SettingsView: View {
                 isOn: Binding(
                     get: { model.payload.settings.autoRestoreActiveProfile },
                     set: { model.setAutoRestore($0) }
+                )
+            )
+            SettingsRowDivider()
+            SettingsToggleRow(
+                icon: "power.circle.fill",
+                tint: EnvBoxTheme.aqua,
+                title: "登录时启动 EnvBox",
+                description: "登录后应用配置。",
+                isOn: Binding(
+                    get: { model.launchAtLogin },
+                    set: { model.setLaunchAtLogin($0) }
                 )
             )
             SettingsRowDivider()
@@ -97,6 +111,66 @@ struct SettingsView: View {
                     set: { model.setAutoClearSensitiveClipboard($0) }
                 )
             )
+        }
+    }
+
+    private var mcpSection: some View {
+        SettingsCard(title: "MCP", icon: "point.3.connected.trianglepath.dotted") {
+            VStack(alignment: .leading, spacing: 12) {
+                SettingsToggleRow(
+                    icon: "powerplug.fill",
+                    tint: EnvBoxTheme.indigo,
+                    title: "启用 MCP",
+                    description: "允许 agent 读取当前配置。",
+                    isOn: Binding(
+                        get: { model.mcpEnabled },
+                        set: { model.setMCPEnabled($0) }
+                    )
+                )
+
+                if model.mcpEnabled {
+                    SettingsRowDivider()
+                    VStack(alignment: .leading, spacing: 10) {
+                        Picker("客户端", selection: $mcpClient) {
+                            ForEach(MCPClient.allCases) { client in
+                                Text(client.displayName).tag(client)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+
+                        Text(model.mcpSnippet(for: mcpClient))
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundStyle(Color.primary.opacity(0.86))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(11)
+                            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                        HStack(spacing: 8) {
+                            Button(mcpClient.snippetLabel) { model.copyMCPSnippet(for: mcpClient) }
+                                .buttonStyle(EnvBoxPrimaryButtonStyle())
+                            Button("复制提示词") { model.copyMCPPrompt(for: mcpClient) }
+                                .buttonStyle(EnvBoxSecondaryButtonStyle())
+                            Spacer()
+                        }
+
+                        SettingsRowDivider()
+
+                        SettingsToggleRow(
+                            icon: "eye.fill",
+                            tint: EnvBoxTheme.amber,
+                            title: "允许 env_reveal 返回明文",
+                            description: "明文会写入会话记录。",
+                            isOn: Binding(
+                                get: { model.mcpAllowReveal },
+                                set: { model.setMCPAllowReveal($0) }
+                            )
+                        )
+                    }
+                }
+            }
+            .padding(14)
         }
     }
 

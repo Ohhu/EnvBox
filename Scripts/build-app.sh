@@ -51,6 +51,10 @@ if [[ ! -x "$BIN_DIR/EnvBox" ]]; then
     echo "error: missing executable at $BIN_DIR/EnvBox" >&2
     exit 1
 fi
+if [[ ! -x "$BIN_DIR/envbox-helper" ]]; then
+    echo "error: missing helper executable at $BIN_DIR/envbox-helper" >&2
+    exit 1
+fi
 
 FINAL_BINARY=".build/bin/EnvBox-$TARGET_ARCH"
 cp "$BIN_DIR/EnvBox" "$FINAL_BINARY"
@@ -58,9 +62,11 @@ lipo -info "$FINAL_BINARY"
 
 echo "==> Assembling app bundle"
 rm -rf "$APP_PATH"
-mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
+mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources" "$APP_PATH/Contents/Helpers"
 cp "$FINAL_BINARY" "$APP_PATH/Contents/MacOS/EnvBox"
 chmod 755 "$APP_PATH/Contents/MacOS/EnvBox"
+cp "$BIN_DIR/envbox-helper" "$APP_PATH/Contents/Helpers/envbox"
+chmod 755 "$APP_PATH/Contents/Helpers/envbox"
 cp Resources/AppIcon.icns "$APP_PATH/Contents/Resources/AppIcon.icns"
 cp Resources/Info.plist "$APP_PATH/Contents/Info.plist"
 chmod 644 "$APP_PATH/Contents/Info.plist" "$APP_PATH/Contents/Resources/AppIcon.icns"
@@ -71,9 +77,11 @@ printf 'APPL????' > "$APP_PATH/Contents/PkgInfo"
 
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
     echo "==> Signing ad-hoc (set SIGN_IDENTITY for Developer ID)"
+    codesign --force --options runtime --sign - "$APP_PATH/Contents/Helpers/envbox"
     codesign --force --options runtime --entitlements Resources/EnvBox.entitlements --sign - "$APP_PATH"
 else
     echo "==> Signing with $SIGN_IDENTITY"
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP_PATH/Contents/Helpers/envbox"
     codesign --force --options runtime --timestamp --entitlements Resources/EnvBox.entitlements --sign "$SIGN_IDENTITY" "$APP_PATH"
 fi
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"

@@ -30,6 +30,7 @@ public enum EnvBoxError: Error, LocalizedError, Sendable, Equatable {
     case processFailed(String)
     case shellIntegrationUnavailable
     case activationFailed(String)
+    case activeEnvironmentUnavailable(String)
 
     public var errorDescription: String? {
         switch self {
@@ -89,6 +90,8 @@ public enum EnvBoxError: Error, LocalizedError, Sendable, Equatable {
             return "当前 Shell 不是 Zsh，EnvBox 暂不支持自动集成。"
         case .activationFailed(let message):
             return "配置应用失败：\(message)"
+        case .activeEnvironmentUnavailable(let message):
+            return "当前没有可用的 Shell 激活配置：\(message)"
         }
     }
 }

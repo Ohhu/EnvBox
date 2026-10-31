@@ -60,6 +60,14 @@ struct SystemVariableRow: View {
                     }
                 }
                 IconButton(
+                    systemName: "tag",
+                    help: "复制变量名",
+                    tint: Color.primary.opacity(0.62),
+                    size: 26
+                ) {
+                    model.copyKeyToClipboard(variable.key)
+                }
+                IconButton(
                     systemName: "doc.on.doc",
                     help: "复制值",
                     tint: Color.primary.opacity(0.62),
@@ -159,6 +167,14 @@ struct ProfileVariableRow: View {
                     }
                 }
                 IconButton(
+                    systemName: "tag",
+                    help: "复制变量名",
+                    tint: Color.primary.opacity(0.62),
+                    size: 26
+                ) {
+                    model.copyKeyToClipboard(variable.key)
+                }
+                IconButton(
                     systemName: "doc.on.doc",
                     help: "复制值",
                     tint: Color.primary.opacity(0.62),
@@ -193,6 +209,9 @@ struct ProfileVariableRow: View {
                 Button(model.isRevealed(profile: variable) ? "隐藏值" : "显示值") {
                     model.toggleReveal(profile: variable)
                 }
+            }
+            Button("复制变量名") {
+                model.copyKeyToClipboard(variable.key)
             }
             Button("复制值") {
                 model.copyToClipboard(variable.value, sensitive: variable.isSecret)
