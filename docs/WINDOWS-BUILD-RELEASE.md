@@ -29,10 +29,11 @@ package-windows.ps1                                ├ go build 两个 exe
 
 工具链：Go 1.26+、`wails3`（`go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0`）、Inno Setup 6、Windows SDK（`signtool.exe`，仅签名需要）。脚本缺工具时会直接报错并给出安装命令。
 
-两个环境注意点：
+三个环境注意点：
 
 - 注册表读写需要正常权限的进程。受限沙箱里 `RegCreateKeyEx`/`RegOpenKeyEx` 返回 LSTATUS=5，UI 会显示错误横幅而不是空表。
 - `GOCACHE`/`GOMODCACHE` 默认在用户目录；受限环境要显式指到可写路径，否则 `go build` 报 `Access is denied`。
+- **产物会继承构建目录的完整性标签。** 如果构建发生在被标为低完整性的目录里（受限沙箱常这么做），`dist` 下的 exe 也会带上 `Mandatory Label\Low`；双击时 Windows 让新进程取"文件标签与令牌里较低的那个"，安装器就以低完整性运行，在 `%TEMP%`（中等完整性）创建解包目录被拒，报 `Setup was unable to create the directory ... Error 5`。把产物**复制**到普通目录再分发即可：复制不携带 SACL，副本是正常完整性。CI 跑在干净 runner 上，不会出现这个标签。
 
 ## 版本号
 
