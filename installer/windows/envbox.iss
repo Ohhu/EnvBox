@@ -133,47 +133,64 @@ begin
   Result := CheckForMutexes(EnvBoxMutexName);
 end;
 
-{ The installed EnvBox.exe. The app-dir constant is not guaranteed to point at
-  the previous install this early, so fall back to the path the previous
-  uninstall entry recorded before giving up. }
-function EnvBoxExePath(): String;
+{ The installed EnvBox.exe. Expanding the app-dir constant before the wizard
+  exists aborts Setup with a runtime error, so it is only touched once the caller
+  says it is safe; until then the previous uninstall entry is the only source. }
+function EnvBoxExePath(AppDirReady: Boolean): String;
 var
+  Candidate: String;
   InstallPath: String;
 begin
-  Result := ExpandConstant('{app}\{#AppExe}');
-  if FileExists(Result) then
-    Exit;
   Result := '';
-  if RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}_is1', 'Inno Setup: App Path', InstallPath) then
-    if FileExists(InstallPath + '\{#AppExe}') then
-      Result := InstallPath + '\{#AppExe}';
+  if AppDirReady then
+  begin
+    Candidate := ExpandConstant('{app}\{#AppExe}');
+    if FileExists(Candidate) then
+    begin
+      Result := Candidate;
+      Exit;
+    end;
+  end;
+  { No default-folder guess here: the previous uninstall entry is the only source
+    that is both reliable and cheap this early. }
+  { The uninstall key is AppId plus the _is1 suffix, with the literal braces that
+    the setup section escapes by doubling the opening one. Spelled out on
+    purpose: SetupSetting("AppId") hands back the escaped form. }
+  if RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{5C1F7C2E-8A4B-4E6D-9F31-2B7D6A0C4E11}_is1', 'Inno Setup: App Path', InstallPath) then
+  begin
+    Candidate := InstallPath + '\{#AppExe}';
+    if FileExists(Candidate) then
+      Result := Candidate;
+  end;
 end;
 
 { Asks the installed app to exit. The app answers --quit before it touches the
   single-instance mutex, so this never looks like a second instance. Used instead
   of a Win32 event call because Inno's script engine does not expose one. }
-function AskEnvBoxToQuit(): Boolean;
+function AskEnvBoxToQuit(AppDirReady: Boolean): Boolean;
 var
   ResultCode: Integer;
   ExePath: String;
 begin
   Result := False;
-  ExePath := EnvBoxExePath();
+  ExePath := EnvBoxExePath(AppDirReady);
   if ExePath = '' then
     Exit;
-  Result := Exec(ExePath, '--quit', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  { ewNoWait: the app is polled through its mutex below, and the caller must not
+    freeze the wizard while a --quit process exits. }
+  Result := Exec(ExePath, '--quit', '', SW_HIDE, ewNoWait, ResultCode);
 end;
 
-function WaitForEnvBoxExit(): Boolean;
+function WaitForEnvBoxExit(AppDirReady: Boolean): Boolean;
 var
   Elapsed: Integer;
 begin
   Result := not EnvBoxIsRunning();
   if Result then
     Exit;
-  { No event means an older build without the listener: stop waiting and let the
+  { No exe means an older build without the listener: stop waiting and let the
     caller fall back to asking the user. }
-  if not AskEnvBoxToQuit() then
+  if not AskEnvBoxToQuit(AppDirReady) then
     Exit;
   Elapsed := 0;
   while EnvBoxIsRunning() and (Elapsed < QuitWaitMilliseconds) do
@@ -185,12 +202,11 @@ begin
 end;
 
 { Closes a running EnvBox, asking the user only when the automatic close failed.
-  Called once at startup, so the wizard never runs against a live instance, and
-  again right before files are copied, in case the user relaunched it. }
-function CloseRunningEnvBox(): Boolean;
+  Used right before files are copied, and by the uninstaller. }
+function CloseRunningEnvBox(AppDirReady: Boolean): Boolean;
 begin
   Result := True;
-  while not WaitForEnvBoxExit() do
+  while not WaitForEnvBoxExit(AppDirReady) do
   begin
     if WizardSilent then
     begin
@@ -205,19 +221,26 @@ begin
   end;
 end;
 
-function InitializeSetup(): Boolean;
+{ Ask the app to leave as soon as the wizard exists, but do not block the first
+  page waiting for it: PrepareToInstall does the waiting. No prompts here either.
+  The app-dir constant is still off limits (only the registry path is used), which
+  is what the earlier InitializeSetup attempt got wrong: expanding it there
+  aborts the whole setup with a runtime error. }
+procedure InitializeWizard();
 begin
-  Result := CloseRunningEnvBox();
+  if EnvBoxIsRunning() then
+    AskEnvBoxToQuit(False);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
-  if not CloseRunningEnvBox() then
+  if not CloseRunningEnvBox(True) then
     Result := CustomMessage('EnvBoxStillRunning');
 end;
 
+{ Uninstaller: resolve through the registry, the uninstall log owns the folder. }
 function InitializeUninstall(): Boolean;
 begin
-  Result := CloseRunningEnvBox();
+  Result := CloseRunningEnvBox(False);
 end;
