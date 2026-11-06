@@ -280,6 +280,7 @@ html, body {
 .save-state { display: flex; align-items: center; gap: 6px; font-size: var(--fs-caption); color: var(--c-text-secondary); }
 .save-state .ico { color: var(--brand-mint); }
 .save-state .sub { font-size: 9.5px; color: var(--c-text-tertiary); margin-top: 1px; }
+.save-state.failed .ico { color: #d94a4a; }
 .sidebar-foot .icon-btn { margin-left: auto; width: 26px; height: 26px; border-radius: 8px; }
 
 /* ---------- content ---------- */
@@ -737,6 +738,48 @@ html, body {
   gap: 8px;
   padding: 14px 22px 20px;
 }
+.sheet-narrow { width: 430px; }
+.field-error { font-size: var(--fs-caption); color: #d94a4a; }
+
+/* dialog */
+
+.dialog-backdrop { z-index: 50; }
+.dialog {
+  width: 430px;
+  max-width: calc(100vw - 48px);
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid var(--c-hairline);
+  background: var(--c-bg1);
+  box-shadow: 0 40px 90px rgba(10,18,32,.35);
+  animation: sheet-in var(--motion-snappy) var(--motion-ease);
+}
+.dialog-head {
+  display: flex;
+  gap: 12px;
+  padding: 20px 22px 6px;
+}
+.dialog-icon {
+  width: 34px; height: 34px;
+  flex: none;
+  border-radius: 10px;
+  display: grid; place-items: center;
+  background: rgba(71,194,230,.16);
+  color: #1a86a8;
+}
+.dialog-icon.danger { background: rgba(217,74,74,.14); color: #d94a4a; }
+.dialog-head h2 { margin: 3px 0 0; font-size: 15px; font-weight: 650; }
+.dialog-head p { margin: 6px 0 0; font-size: var(--fs-body); line-height: 1.55; color: var(--c-text-secondary); }
+.dialog-body { padding: 14px 22px 0; display: grid; gap: 8px; }
+.dialog-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 18px 22px 20px; }
+
+.btn.danger.solid {
+  color: #fff;
+  background: #d94a4a;
+  border-color: transparent;
+  font-weight: 600;
+}
+.btn.danger.solid:hover { background: #c53b3b; border-color: transparent; }
 
 .empty {
   padding: 46px 20px;

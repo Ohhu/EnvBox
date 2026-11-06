@@ -24,6 +24,8 @@ const state = {
   query: "",
   systemReveal: false,
   sheet: null,
+  dialog: null,
+  saveState: "saved",
   busy: false,
   revealed: new Set()
 };
@@ -112,7 +114,6 @@ function toast(message, isError) {
 function sidebarHTML() {
   const data = state.data;
   const active = data.profiles.find(function (p) { return p.active; });
-  const applied = (data.appliedKeys || []).length;
   let html = '<div class="sidebar-drag" aria-hidden="true"></div>';
   html += '<header class="brand">'
     + '<span class="brand-mark">' + icon("box", 19) + '</span>'
@@ -142,11 +143,24 @@ function sidebarHTML() {
 
   html += '</div>';
   html += '<footer class="sidebar-foot">'
-    + '<span class="save-state"><span class="ico">' + icon("check", 13) + '</span>'
-    + '<span><div>已保存</div><div class="sub">' + (applied ? applied + " 个变量已写入" : "仅此设备") + '</div></span></span>'
+    + saveStateHTML()
     + '<button class="icon-btn" data-act="view:settings" title="设置">' + icon("gear", 13) + '</button>'
     + '</footer>';
   return html;
+}
+
+// The footer must describe the store, not decorate it: "saved" tracks whether the
+// last write reached the vault, and the count is the live applied key list.
+function saveStateHTML() {
+  const applied = (state.data.appliedKeys || []).length;
+  const failed = state.saveState === "failed";
+  const title = failed ? "未保存" : "已保存";
+  const sub = failed
+    ? "上一次改动没有写进配置库"
+    : (applied ? applied + " 个变量已写入本机" : "尚未应用到本机");
+  return '<span class="save-state' + (failed ? " failed" : "") + '" title="' + esc(sub) + '">'
+    + '<span class="ico">' + icon(failed ? "x" : "check", 13) + '</span>'
+    + '<span><div>' + esc(title) + '</div><div class="sub">' + esc(sub) + '</div></span></span>';
 }
 
 function profileRowHTML(profile) {
@@ -210,6 +224,7 @@ function profileHTML() {
     + '<div class="page-sub">' + esc(profile.note || "未填写备注") + '</div>'
     + '</div>'
     + '<div class="page-actions">'
+    + '<button class="btn icon-only" data-act="edit-profile" title="编辑名称与备注">' + icon("pencil", 15) + '</button>'
     + '<button class="btn icon-only" data-act="delete-profile" title="删除配置">' + icon("trash", 15) + '</button>'
     + (profile.active
       ? '<button class="btn" data-act="apply" data-id="' + esc(profile.id) + '">' + icon("refresh", 13) + '重新应用</button>'
@@ -247,6 +262,9 @@ function visibleVariables(profile) {
 }
 
 function variableRowsHTML(profile) {
+  if (!profile.variables.length) {
+    return '<div class="empty"><strong>还没有变量</strong>点右上角的「添加变量」添加第一条。</div>';
+  }
   const rows = visibleVariables(profile);
   if (!rows.length) return '<div class="empty">没有匹配的变量</div>';
   return rows.map(function (variable) { return variableRowHTML(variable); }).join("");
@@ -410,9 +428,10 @@ function selectHTML(role, value, options) {
 function sheetHTML() {
   const sheet = state.sheet;
   if (!sheet) return "";
+  if (sheet.kind === "profile") return profileSheetHTML(sheet);
   if (sheet.kind !== "variable") return "";
   const draft = sheet.draft;
-  return '<div class="sheet-backdrop" data-act="close-sheet"><div class="sheet" data-sheet="1">'
+  return '<div class="sheet-backdrop" data-act="sheet-backdrop"><div class="sheet" data-sheet="1">'
     + '<div class="sheet-head"><h2>' + (sheet.index < 0 ? "添加变量" : "编辑变量") + '</h2>'
     + '<p>敏感变量的值会加密保存，列表里默认遮盖。</p></div>'
     + '<div class="sheet-body">'
@@ -429,6 +448,117 @@ function sheetHTML() {
 
 function fieldHTML(label, control) {
   return '<div class="field"><label>' + esc(label) + '</label>' + control + '</div>';
+}
+
+function fieldError(text) {
+  return '<div class="field-error" data-sheet-error hidden>' + esc(text) + '</div>';
+}
+
+function profileSheetHTML(sheet) {
+  const draft = sheet.draft;
+  const creating = sheet.mode === "create";
+  return '<div class="sheet-backdrop" data-act="sheet-backdrop"><div class="sheet sheet-narrow" data-sheet="1">'
+    + '<div class="sheet-head"><h2>' + (creating ? "新建配置" : "编辑配置") + '</h2>'
+    + '<p>' + (creating ? "配置是一组环境变量，应用这个配置时会整组写入。" : "改名或改备注不会动已经写入本机的变量。") + '</p></div>'
+    + '<div class="sheet-body">'
+    + fieldHTML("名称", '<input id="f-name" type="text" maxlength="60" value="' + esc(draft.name) + '" placeholder="例如 本地开发" spellcheck="false" autocomplete="off">')
+    + fieldHTML("备注", '<input id="f-note" type="text" maxlength="500" value="' + esc(draft.note) + '" placeholder="可选" autocomplete="off">')
+    + fieldError("")
+    + '</div>'
+    + '<div class="sheet-foot"><button class="btn ghost" data-act="close-sheet">取消</button>'
+    + '<button class="btn primary" data-act="sheet-save">' + (creating ? "创建" : "保存") + '</button></div>'
+    + '</div></div>';
+}
+
+/* ---------------- dialog ---------------- */
+
+// window.confirm renders the WebView2 chrome dialog ("wails.localhost 显示"),
+// which shares nothing with the app shell. Everything modal goes through here.
+function dialogHTML() {
+  const dialog = state.dialog;
+  if (!dialog) return "";
+  const password = dialog.kind === "password";
+  return '<div class="sheet-backdrop dialog-backdrop" data-act="dialog-backdrop">'
+    + '<div class="dialog" data-dialog="1" role="dialog" aria-modal="true">'
+    + '<div class="dialog-head">'
+    + '<span class="dialog-icon' + (dialog.danger ? " danger" : "") + '">' + icon(dialog.danger ? "trash" : "shield", 16) + '</span>'
+    + '<div><h2>' + esc(dialog.title) + '</h2>'
+    + (dialog.message ? '<p>' + esc(dialog.message) + '</p>' : '')
+    + '</div></div>'
+    + (password
+      ? '<div class="dialog-body">' + fieldHTML(dialog.label, '<input id="f-passphrase" type="password" autocomplete="off" placeholder="至少 8 位">')
+        + '<div class="field-error" data-dialog-error hidden></div></div>'
+      : '')
+    + '<div class="dialog-foot">'
+    + '<button class="btn ghost" data-act="dialog-cancel">' + esc(dialog.cancelLabel) + '</button>'
+    + '<button class="btn ' + (dialog.danger ? "danger solid" : "primary") + '" data-act="dialog-confirm">' + esc(dialog.confirmLabel) + '</button>'
+    + '</div></div></div>';
+}
+
+function openDialog(dialog) {
+  return new Promise(function (resolve) {
+    state.dialog = Object.assign({ cancelLabel: "取消", confirmLabel: "确定" }, dialog, { resolve: resolve });
+    render();
+    const target = document.getElementById("f-passphrase")
+      || document.querySelector('[data-act="dialog-confirm"]');
+    if (target) target.focus();
+  });
+}
+
+async function askConfirm(options) {
+  const answer = await openDialog({
+    kind: "confirm",
+    title: options.title,
+    message: options.message || "",
+    confirmLabel: options.confirmLabel,
+    danger: Boolean(options.danger)
+  });
+  return answer === true;
+}
+
+async function askPassword(options) {
+  const answer = await openDialog({
+    kind: "password",
+    title: options.title,
+    message: options.message || "",
+    label: options.label || "密码",
+    confirmLabel: options.confirmLabel
+  });
+  return typeof answer === "string" ? answer : "";
+}
+
+function settleDialog(value) {
+  const dialog = state.dialog;
+  state.dialog = null;
+  render();
+  if (dialog && dialog.resolve) dialog.resolve(value);
+}
+
+function showError(selector, message) {
+  const box = document.querySelector(selector);
+  if (!box) {
+    toast(message, true);
+    return;
+  }
+  box.textContent = message;
+  box.hidden = false;
+}
+
+function submitDialog() {
+  const dialog = state.dialog;
+  if (!dialog) return;
+  if (dialog.kind === "password") {
+    const input = document.getElementById("f-passphrase");
+    const value = input ? input.value : "";
+    if (value.length < 8) {
+      showError("[data-dialog-error]", "密码至少 8 位");
+      if (input) input.focus();
+      return;
+    }
+    settleDialog(value);
+    return;
+  }
+  settleDialog(true);
 }
 
 /* ---------------- render ---------------- */
@@ -475,7 +605,7 @@ function render() {
   if (nav) nav.scrollTop = scrollTop;
   positionSelection();
   els.content.innerHTML = state.view === "system" ? systemHTML() : state.view === "settings" ? settingsHTML() : profileHTML();
-  els.sheet.innerHTML = sheetHTML();
+  els.sheet.innerHTML = dialogHTML() + sheetHTML();
 }
 
 function refreshList() {
@@ -494,12 +624,23 @@ function refreshList() {
 
 /* ---------------- actions ---------------- */
 
+// Actions that write the vault; everything else is read-only or machine state.
+const PERSIST_ACTIONS = {
+  "save-profile": 1, "delete-profile": 1, "save-settings": 1, "set-autostart": 1,
+  "set-mcp": 1, "shell-install": 1, "shell-uninstall": 1, "export": 1
+};
+
+function isPersistence(action) {
+  return Boolean(PERSIST_ACTIONS[action]);
+}
+
 async function run(action, payload) {
   if (state.busy) return null;
   state.busy = true;
   document.body.style.cursor = "progress";
   try {
     const result = await bridge.dispatch(action, payload || null);
+    if (isPersistence(action)) state.saveState = (!result || result.ok === false) ? "failed" : "saved";
     if (result && result.state) state.data = result.state;
     if (result && result.message) toast(result.message, result.ok === false);
     if (!result || result.ok === false) return result;
@@ -510,6 +651,7 @@ async function run(action, payload) {
     }
     return result;
   } catch (error) {
+    if (isPersistence(action)) state.saveState = "failed";
     toast(error.message || String(error), true);
     return null;
   } finally {
@@ -545,6 +687,137 @@ function saveProfile() {
   return run("save-profile", { profile: profile });
 }
 
+const TINT_CYCLE = ["ocean", "aurora", "ember", "orchid", "lime", "slate"];
+
+// New profiles get the least-used tint so the sidebar stays readable instead of
+// turning into six identical blue rows.
+function nextTint() {
+  const used = {};
+  state.data.profiles.forEach(function (profile) { used[profile.tint] = (used[profile.tint] || 0) + 1; });
+  let best = TINT_CYCLE[0];
+  let bestCount = Infinity;
+  TINT_CYCLE.forEach(function (tint) {
+    const count = used[tint] || 0;
+    if (count < bestCount) { bestCount = count; best = tint; }
+  });
+  return best;
+}
+
+async function persistSheet() {
+  const sheet = state.sheet;
+  if (!sheet) return;
+  if (sheet.kind === "profile") { await persistProfileSheet(sheet); return; }
+  await persistVariableSheet(sheet);
+}
+
+// Persists before closing: a rejected name (empty, duplicate) leaves the sheet
+// open with the typed text intact instead of dropping the edit on the floor.
+async function persistProfileSheet(sheet) {
+  const nameInput = document.getElementById("f-name");
+  const noteInput = document.getElementById("f-note");
+  if (!nameInput) return;
+  const name = nameInput.value.trim();
+  const note = noteInput ? noteInput.value.trim() : "";
+  if (!name) {
+    showError("[data-sheet-error]", "名称不能为空");
+    nameInput.focus();
+    return;
+  }
+  const creating = sheet.mode === "create";
+  const clash = state.data.profiles.some(function (profile) {
+    return profile.id !== sheet.draft.id && profile.name.trim().toLowerCase() === name.toLowerCase();
+  });
+  if (clash) {
+    showError("[data-sheet-error]", "已有同名配置");
+    nameInput.focus();
+    return;
+  }
+
+  const profile = currentProfile();
+  const request = {
+    id: creating ? "" : sheet.draft.id,
+    name: name,
+    note: note,
+    tint: creating ? sheet.draft.tint : (profile ? profile.tint : sheet.draft.tint),
+    symbol: creating ? sheet.draft.symbol : (profile ? profile.symbol : sheet.draft.symbol),
+    variables: creating || !profile ? [] : profile.variables
+  };
+  sheet.draft.name = name;
+  sheet.draft.note = note;
+
+  const result = await run("save-profile", { profile: request });
+  if (!result || result.ok === false) return;
+  state.sheet = null;
+  state.query = "";
+  state.filter = "all";
+  if (creating) {
+    const created = state.data.profiles.find(function (profile) {
+      return profile.name.trim().toLowerCase() === name.toLowerCase();
+    });
+    if (created) { state.selected = created.id; state.view = "profiles"; }
+  }
+  render();
+}
+
+async function persistVariableSheet(sheet) {
+  const profile = currentProfile();
+  if (!profile) return;
+  const keyInput = document.getElementById("f-key");
+  const valueInput = document.getElementById("f-value");
+  const noteInput = document.getElementById("f-note");
+  const enabledInput = document.getElementById("f-enabled");
+  const secretInput = document.getElementById("f-secret");
+  if (!keyInput || !valueInput) return;
+
+  const key = keyInput.value.trim();
+  const value = valueInput.value;
+  const note = noteInput ? noteInput.value.trim() : "";
+  const enabled = enabledInput ? enabledInput.checked : true;
+  const secret = secretInput ? secretInput.checked : false;
+  if (!key) {
+    showError("[data-sheet-error]", "变量名不能为空");
+    keyInput.focus();
+    return;
+  }
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+    showError("[data-sheet-error]", "变量名只能用字母、数字和下划线，且不能以数字开头");
+    keyInput.focus();
+    return;
+  }
+
+  // Work on a copy so a rejected save leaves the visible profile untouched.
+  const next = {
+    id: profile.id, name: profile.name, note: profile.note,
+    tint: profile.tint, symbol: profile.symbol,
+    variables: profile.variables.map(function (variable) { return Object.assign({}, variable); })
+  };
+  if (sheet.index < 0) {
+    const duplicate = next.variables.some(function (variable) {
+      return variable.key.trim().toUpperCase() === key.toUpperCase();
+    });
+    if (duplicate) {
+      showError("[data-sheet-error]", "已有同名变量");
+      keyInput.focus();
+      return;
+    }
+    next.variables.push({ id: "", key: key, value: value, note: note, enabled: enabled, secret: secret, masked: false });
+  } else {
+    const variable = next.variables.find(function (item) { return item.id === sheet.draft.id; });
+    if (!variable) return;
+    variable.key = key;
+    variable.value = value;
+    variable.note = note;
+    variable.enabled = enabled;
+    variable.secret = secret;
+  }
+
+  sheet.draft = { id: sheet.draft.id, key: key, value: value, note: note, enabled: enabled, secret: secret };
+  const result = await run("save-profile", { profile: next });
+  if (!result || result.ok === false) return;
+  state.sheet = null;
+  render();
+}
+
 async function applyProfile(id) {
   await run("apply", { id: id });
 }
@@ -563,7 +836,32 @@ document.addEventListener("click", async function (event) {
     return;
   }
 
+  // Backdrops and their buttons are separate actions: the old shared guard
+  // swallowed the in-panel 取消 button, and dropping it let clicks inside the
+  // panel close the panel. Each side now has its own handler.
+  if (act === "dialog-cancel") {
+    settleDialog(state.dialog && state.dialog.kind === "password" ? "" : false);
+    return;
+  }
+
+  if (act === "dialog-backdrop") {
+    if (event.target.closest("[data-dialog]")) return;
+    settleDialog(state.dialog && state.dialog.kind === "password" ? "" : false);
+    return;
+  }
+
+  if (act === "dialog-confirm") {
+    submitDialog();
+    return;
+  }
+
   if (act === "close-sheet") {
+    state.sheet = null;
+    render();
+    return;
+  }
+
+  if (act === "sheet-backdrop") {
     if (event.target.closest("[data-sheet]")) return;
     state.sheet = null;
     render();
@@ -583,13 +881,27 @@ document.addEventListener("click", async function (event) {
   }
 
   if (act === "new-profile") {
-    const id = "new-" + Date.now().toString(36);
-    state.data.profiles.push({ id: id, name: "新配置", note: "", tint: "ocean", symbol: "cloud.fill", active: false, updatedAt: new Date().toISOString(), variables: [] });
-    state.selected = id;
-    state.view = "profiles";
-    state.query = "";
-    state.filter = "all";
+    if (state.data.profiles.length >= 100) { toast("配置数量已达上限", true); return; }
+    state.sheet = {
+      kind: "profile", mode: "create",
+      draft: { id: "", name: "", note: "", tint: nextTint(), symbol: "cloud.fill" }
+    };
     render();
+    const input = document.getElementById("f-name");
+    if (input) input.focus();
+    return;
+  }
+
+  if (act === "edit-profile") {
+    const profile = currentProfile();
+    if (!profile) return;
+    state.sheet = {
+      kind: "profile", mode: "edit",
+      draft: { id: profile.id, name: profile.name, note: profile.note, tint: profile.tint, symbol: profile.symbol }
+    };
+    render();
+    const input = document.getElementById("f-name");
+    if (input) { input.focus(); input.select(); }
     return;
   }
 
@@ -640,29 +952,7 @@ document.addEventListener("click", async function (event) {
   }
 
   if (act === "sheet-save") {
-    const sheet = state.sheet;
-    const profile = currentProfile();
-    if (!sheet || !profile) return;
-    const key = document.getElementById("f-key").value.trim();
-    if (!key) { toast("变量名不能为空", true); return; }
-    const value = document.getElementById("f-value").value;
-    const note = document.getElementById("f-note").value.trim();
-    const enabled = document.getElementById("f-enabled").checked;
-    const secret = document.getElementById("f-secret").checked;
-    if (sheet.index < 0) {
-      profile.variables.push({ id: "new-" + Date.now().toString(36), key: key, value: value, note: note, enabled: enabled, secret: secret, masked: false });
-    } else {
-      const variable = profile.variables.find(function (v) { return v.id === sheet.draft.id; });
-      if (variable) {
-        variable.key = key;
-        variable.value = value;
-        variable.note = note;
-        variable.enabled = enabled;
-        variable.secret = secret;
-      }
-    }
-    state.sheet = null;
-    await saveProfile();
+    await persistSheet();
     return;
   }
 
@@ -674,7 +964,16 @@ document.addEventListener("click", async function (event) {
   if (act === "delete-profile") {
     const profile = currentProfile();
     if (!profile) return;
-    if (!window.confirm("删除配置「" + profile.name + "」？配置与变量将被永久删除。")) return;
+    const total = profile.variables.length;
+    const confirmed = await askConfirm({
+      title: "删除「" + profile.name + "」？",
+      message: profile.active
+        ? "这个配置正在本机生效。删除会先把已写入的变量从系统中移除，再永久删除配置，无法撤销。"
+        : "配置和其中的 " + total + " 个变量会被永久删除，无法撤销。",
+      confirmLabel: "删除",
+      danger: true
+    });
+    if (!confirmed) return;
     await run("delete-profile", { id: profile.id });
     return;
   }
@@ -723,15 +1022,26 @@ document.addEventListener("click", async function (event) {
   }
 
   if (act === "export") {
-    const passphrase = window.prompt("导出密码（至少 8 位）");
-    if (passphrase) await run("export", { passphrase: passphrase });
+    const passphrase = await askPassword({
+      title: "导出全部配置",
+      message: "导出的 .envbox 文件用这个密码加密，导入时需要同一个密码。密码不会被保存。",
+      label: "密码（至少 8 位）",
+      confirmLabel: "导出"
+    });
+    if (!passphrase) return;
+    await run("export", { passphrase: passphrase });
     return;
   }
 });
 
 document.addEventListener("input", function (event) {
   const input = event.target;
-  if (!input || input.getAttribute("data-role") !== "search") return;
+  if (!input) return;
+  if (input.closest("[data-sheet]") || input.closest("[data-dialog]")) {
+    const box = input.closest("[data-sheet]") ? document.querySelector("[data-sheet-error]") : document.querySelector("[data-dialog-error]");
+    if (box) box.hidden = true;
+  }
+  if (input.getAttribute("data-role") !== "search") return;
   state.query = input.value;
   refreshList();
 });
@@ -743,6 +1053,22 @@ document.addEventListener("change", function (event) {
 });
 
 document.addEventListener("keydown", function (event) {
+  if (event.key === "Escape" && state.dialog) {
+    event.preventDefault();
+    settleDialog(state.dialog.kind === "password" ? "" : false);
+    return;
+  }
+  if (event.key === "Enter" && state.dialog) {
+    event.preventDefault();
+    submitDialog();
+    return;
+  }
+  if (event.key === "Enter" && state.sheet && event.target.closest("[data-sheet]")) {
+    event.preventDefault();
+    const save = document.querySelector('[data-act="sheet-save"]');
+    if (save) save.click();
+    return;
+  }
   if (event.key === "Escape" && state.sheet) {
     state.sheet = null;
     render();

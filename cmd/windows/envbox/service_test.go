@@ -185,6 +185,90 @@ func TestSaveProfileCreatesNewProfile(t *testing.T) {
 	}
 }
 
+func TestSaveProfileTrimsNameAndNote(t *testing.T) {
+	app := newTestApp(t)
+	created, err := app.Dispatch("save-profile", mustJSON(t, map[string]any{"profile": map[string]any{
+		"id": "", "name": "  预发布  ", "note": "  staging  ", "variables": []any{},
+	}}))
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if !created.OK {
+		t.Fatalf("新建失败：%s", created.Message)
+	}
+	payload, err := app.store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, profile := range payload.Profiles {
+		if profile.Name == "预发布" {
+			if profile.Note != "staging" {
+				t.Fatalf("备注没有去掉空白：%q", profile.Note)
+			}
+			return
+		}
+	}
+	t.Fatalf("没有找到去掉空白后保存的配置：%+v", payload.Profiles)
+}
+
+// fakeEnv records what would be written to HKCU so tests do not need registry
+// access.
+type fakeEnv struct {
+	removed []string
+}
+
+func (f *fakeEnv) List() ([]winsys.EnvEntry, error) { return nil, nil }
+
+func (f *fakeEnv) Apply(model.EnvProfile, []string) (winsys.ApplyReport, error) {
+	return winsys.ApplyReport{}, nil
+}
+
+func (f *fakeEnv) Remove(names []string) ([]string, error) {
+	f.removed = append(f.removed, names...)
+	return names, nil
+}
+
+func TestDeleteActiveProfileClearsMachineState(t *testing.T) {
+	app := newTestApp(t)
+	env := &fakeEnv{}
+	app.env = env
+	payload, err := app.store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := "p1"
+	payload.ActiveProfileID = &active
+	payload.AppliedKeys = []string{"REGION"}
+	if err := app.store.Save(payload); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := app.Dispatch("delete-profile", mustJSON(t, map[string]any{"id": "p1"}))
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if !result.OK {
+		t.Fatalf("删除失败：%s", result.Message)
+	}
+
+	after, err := app.store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.ActiveProfileID != nil {
+		t.Fatal("删除生效配置后仍标记为激活")
+	}
+	if len(after.AppliedKeys) != 0 {
+		t.Fatalf("删除后仍记录已写入变量：%v", after.AppliedKeys)
+	}
+	if len(after.Profiles) != 0 {
+		t.Fatalf("配置没有被删除：%+v", after.Profiles)
+	}
+	if len(env.removed) != 1 || env.removed[0] != "REGION" {
+		t.Fatalf("没有把已写入的变量从系统中移除：%v", env.removed)
+	}
+}
+
 // systemVariables is pure: it turns registry entries into the UI list, so the
 // mapping is testable without registry access.
 func TestSystemVariablesFromEntries(t *testing.T) {

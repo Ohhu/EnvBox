@@ -19,6 +19,15 @@ All notable changes to EnvBox are documented here.
 ### Changed (Windows)
 
 - Update frequency is configurable (`off`/`daily`/`weekly`, default daily); `envbox update settings --skip-version` skips a release.
+
+### Fixed (Windows)
+
+- New profiles are written to the vault the moment they are created, so switching views or restarting no longer drops them; creating and renaming both go through a sheet with name and note fields.
+- The sidebar footer reports the real state (last write succeeded or failed, how many variables are live on this machine) instead of a fixed "已保存" label.
+- Destructive confirmations and the export passphrase use in-app dialogs; the WebView2 chrome dialog titled `wails.localhost 显示` is gone.
+- Deleting the active profile first removes its variables from the user environment, so no orphaned keys stay behind.
+- Clicking 取消 inside a sheet or dialog closes it again.
+
 ## [1.1.0] - 2026-10-31
 
 ### Added

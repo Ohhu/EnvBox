@@ -35,9 +35,17 @@ type App struct {
 	// UI can still read state while they run.
 	vaultMu sync.Mutex
 	store   *vault.Store
-	env     *winsys.EnvStore
+	env     envStore
 	shell   *shell.Integration
 	notify  func(string)
+}
+
+// envStore is the slice of the user environment the service needs. Keeping it
+// behind an interface lets tests exercise apply/delete without writing HKCU.
+type envStore interface {
+	List() ([]winsys.EnvEntry, error)
+	Apply(profile model.EnvProfile, previouslyApplied []string) (winsys.ApplyReport, error)
+	Remove(names []string) ([]string, error)
 }
 
 // NewApp wires the service.
@@ -399,6 +407,10 @@ func (a *App) saveProfile(raw string) (*Payload, error) {
 		})
 	}
 
+	// Trim names, notes, variable keys and fill default styling once, so the
+	// vault never stores whitespace the UI would then have to render.
+	profile = profile.Normalized()
+
 	// The list view masks secret values and the editor posts that object back,
 	// so a masked value means "unchanged", not "overwrite the secret with bullets".
 	previous := make(map[string]string)
@@ -449,6 +461,18 @@ func (a *App) deleteProfile(raw string) (*Payload, error) {
 	payload, err := a.store.Load()
 	if err != nil {
 		return a.fail(err)
+	}
+	// Deleting the active profile must clean the machine too: leaving the keys
+	// behind would keep variables no profile owns, and the UI would still count
+	// them as written by EnvBox.
+	if payload.ActiveProfileID != nil && *payload.ActiveProfileID == request.ID {
+		service := &apply.Service{Store: a.store, Env: a.env, Broadcast: winsys.Broadcaster(), Shell: a.shell}
+		if _, err := service.Deactivate(); err != nil {
+			return a.fail(err)
+		}
+		if payload, err = a.store.Load(); err != nil {
+			return a.fail(err)
+		}
 	}
 	kept := make([]model.EnvProfile, 0, len(payload.Profiles))
 	for _, profile := range payload.Profiles {

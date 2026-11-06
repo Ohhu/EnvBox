@@ -137,17 +137,31 @@ export class DemoBackend {
       message = "已移除全部变量";
     } else if (action === "save-profile" && payload && payload.profile) {
       const incoming = payload.profile;
-      const index = data.profiles.findIndex(function (p) { return p.id === incoming.id; });
-      const copy = structuredClone(incoming);
-      copy.updatedAt = nowISO();
-      copy.active = Boolean(profile && profile.active);
-      if (index >= 0) data.profiles[index] = copy;
-      else {
-        copy.id = "p" + (data.profiles.length + 1) + "-" + Date.now().toString(36);
-        copy.active = false;
-        data.profiles.push(copy);
+      const name = String(incoming.name || "").trim();
+      const duplicate = data.profiles.some(function (p) {
+        return p.id !== incoming.id && p.name.trim().toLowerCase() === name.toLowerCase();
+      });
+      if (!name) {
+        ok = false;
+        message = "配置名不能为空";
+      } else if (duplicate) {
+        ok = false;
+        message = "配置名重复：" + name;
+      } else {
+        const index = data.profiles.findIndex(function (p) { return p.id === incoming.id; });
+        const copy = structuredClone(incoming);
+        copy.name = name;
+        copy.updatedAt = nowISO();
+        if (index >= 0) {
+          copy.active = data.profiles[index].active;
+          data.profiles[index] = copy;
+        } else {
+          copy.id = "p" + Date.now().toString(36);
+          copy.active = false;
+          data.profiles.push(copy);
+        }
+        message = "配置已保存";
       }
-      message = "配置已保存";
     } else if (action === "delete-profile" && payload) {
       data.profiles = data.profiles.filter(function (p) { return p.id !== payload.id; });
       if (data.activeId === payload.id) { data.activeId = ""; data.appliedKeys = []; }
