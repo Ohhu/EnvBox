@@ -7,8 +7,8 @@
 5. Create and push a strict stable tag:
 
    ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
+   git tag v1.1.1
+   git push origin v1.1.1
    ```
 
 6. The release workflow runs the gate, tests, arm64 build, signing/notarization when configured, DMG/ZIP
@@ -17,23 +17,26 @@
    Configure the `release` Environment with required reviewers and protect `v*` tags.
 7. Verify the release assets and download the DMG on a clean Mac if possible.
 
-Tags such as `v1.0.0-rc1` intentionally do not build. Only `vMAJOR.MINOR.PATCH` is a formal release.
+Tags such as `v1.1.1-rc1` intentionally do not build. Only `vMAJOR.MINOR.PATCH` is a formal release.
 
-## Signing (optional)
-
-Personal repositories build ad-hoc packages by default. No Apple Developer account is required. Set the
-repository variable `REQUIRE_SIGNED_RELEASE=true` to fail the build instead of publishing an unsigned package.
-
-For signed and notarized releases, add these repository secrets:
+## Signing credentials (macOS)
 
 | Secret | Purpose |
 | --- | --- |
-| `MACOS_CERTIFICATE` | base64-encoded Developer ID Application `.p12` |
-| `MACOS_CERTIFICATE_PASSWORD` | password for the `.p12` |
-| `KEYCHAIN_PASSWORD` | temporary CI keychain password (optional; generated if unset) |
+| `MACOS_CERTIFICATE` | Developer ID Application certificate, base64 of the .p12 |
+| `MACOS_CERTIFICATE_PASSWORD` | Password of that .p12 |
 | `APPLE_ID` | Apple ID used for notarization |
-| `APPLE_TEAM_ID` | Apple Developer Team ID |
-| `APPLE_APP_SPECIFIC_PASSWORD` | app-specific password for notarization |
+| `APPLE_TEAM_ID` | Team identifier |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for notarization |
+| `KEYCHAIN_PASSWORD` | Temporary keychain password; optional, generated randomly when empty |
 
-Use the `release` Environment with required reviewers and protect `v*` tags if the repository has multiple
-maintainers.
+`REQUIRE_SIGNED_RELEASE` set to `true` makes the workflow fail when these are missing.
+
+## Windows
+
+The Windows platform is released by `.github/workflows/release-windows.yml` from the same tag. Only x64 is
+released and the installer is the only distribution artifact. Both workflows share one GitHub Release:
+whichever finishes first creates it, the other reuses it and appends its own section.
+
+Release checklist, signing variables and the updater verification chain are documented in
+[WINDOWS-BUILD-RELEASE.md](WINDOWS-BUILD-RELEASE.md) and [WINDOWS-UPDATE.md](WINDOWS-UPDATE.md).

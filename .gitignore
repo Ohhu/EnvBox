@@ -1,31 +1,54 @@
-# Xcode / SwiftPM
-.build/
-.swiftpm/
-DerivedData/
-xcuserdata/
-*.xcuserstate
-
-# Build output
+# --- Build output ---------------------------------------------------------
 dist/
-build/
+build/*
+!build/windows/
+*.exe
+*.exe~
 *.dmg
 *.zip
 *.xcarchive
+*.syso
+cmd/envbox/wails_windows_*.syso
 
-# Secrets & local state
+# --- Caches (local only, never committed) --------------------------------
+.build/
+.swiftpm/
+.gomod/
+.gocache/
+.module-cache/
+.swift-home/
+DerivedData/
+node_modules/
+xcuserdata/
+*.xcuserstate
+
+# --- Go tooling ----------------------------------------------------------
+*.test
+*.prof
+coverage.out
+.envbox-test/
+
+# --- Logs & temporaries --------------------------------------------------
+*.log
+*.tmp
+.tmp/
+npm-debug.log*
+pnpm-debug.log*
+
+# --- Secrets & local state -----------------------------------------------
+.env
+.env.local
 .envbox
 *.p12
 *.cer
 *.mobileprovision
 ExportOptions.plist
-.swift-home/
-.module-cache/
-.tmp/
 
-# macOS
+# --- macOS ---------------------------------------------------------------
 .DS_Store
 ._*
 
-# Editors
+# --- Editors -------------------------------------------------------------
 .vscode/
 .idea/
+*.swp

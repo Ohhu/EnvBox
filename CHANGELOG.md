@@ -2,6 +2,20 @@
 
 All notable changes to EnvBox are documented here.
 
+## [Unreleased]
+
+### Added (Windows)
+
+- Windows x64 port: Go + Wails v3 desktop app, per-user Inno Setup installer, no admin rights required.
+- CLI and MCP server at `%LOCALAPPDATA%\Programs\EnvBox\bin\envbox.exe`.
+- User environment variables written to `HKCU\Environment` with `REG_EXPAND_SZ` preserved, plus `WM_SETTINGCHANGE` notification.
+- `.envbox` export from the GUI and `envbox import` (CLI) for macOS-originated archives.
+- Opt-out self-update from GitHub Releases with digest cross-check, Authenticode signer pinning and a manual-download fallback for unsigned builds.
+- PowerShell integration through a managed `$PROFILE` block plus an `active.ps1` snapshot.
+
+### Changed (Windows)
+
+- Update frequency is configurable (`off`/`daily`/`weekly`, default daily); `envbox update settings --skip-version` skips a release.
 ## [1.1.0] - 2026-10-31
 
 ### Added

@@ -230,14 +230,35 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh release create "$TAG" \
-            "dist/EnvBox-$VERSION-macOS-arm64.dmg" \
-            "dist/EnvBox-$VERSION-macOS-arm64.zip" \
-            "dist/SHA256SUMS.txt" \
-            --title "EnvBox $VERSION" \
-            --notes-file dist/release-notes.md \
-            --verify-tag \
-            --latest
+          # The Windows job may have created the release first; reuse it in that case so
+          # both platforms land in one release instead of failing here. When it exists we
+          # only add assets and never touch the body, which keeps the Windows section.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              "dist/EnvBox-$VERSION-macOS-arm64.dmg" \
+              "dist/EnvBox-$VERSION-macOS-arm64.zip" \
+              "dist/SHA256SUMS.txt" \
+              --clobber
+            # Append this platform's section instead of overwriting the body, so the
+            # Windows notes written by the other workflow survive.
+            if ! gh release view "$TAG" --json body --jq .body | grep -q "<!-- envbox-macos-assets -->"; then
+              gh release view "$TAG" --json body --jq .body > "$RUNNER_TEMP/body.md"
+              printf "\n<!-- envbox-macos-assets -->\n" >> "$RUNNER_TEMP/body.md"
+              cat "$RUNNER_TEMP/body.md" dist/release-notes.md > "$RUNNER_TEMP/body-new.md"
+              gh release edit "$TAG" --notes-file "$RUNNER_TEMP/body-new.md"
+            fi
+          else
+            # Mark the body so a rerun appends instead of duplicating this section.
+            { printf "\n<!-- envbox-macos-assets -->\n"; cat dist/release-notes.md; } > "$RUNNER_TEMP/notes.md"
+            gh release create "$TAG" \
+              "dist/EnvBox-$VERSION-macOS-arm64.dmg" \
+              "dist/EnvBox-$VERSION-macOS-arm64.zip" \
+              "dist/SHA256SUMS.txt" \
+              --title "EnvBox $VERSION" \
+              --notes-file "$RUNNER_TEMP/notes.md" \
+              --verify-tag \
+              --latest
+          fi
 
       - name: Clean up signing keychain
         if: always()

@@ -18,8 +18,8 @@
 - **配置快速切换**：主窗口一键应用，菜单栏常驻图标可快速切换不同配置。
 - **加密导入导出**：使用独立密码保护的可移植 `.envbox` 文件。
 - **macOS 原生体验**：SwiftUI、原生材质、跟随系统明暗外观、减少动态效果支持、键盘快捷键。
-- **隐私优先**：无网络请求、无遥测、无第三方 SDK；敏感值默认遮盖；敏感剪贴板 45 秒自动清除。
-- **正式版本自动发布**：GitHub Actions 仅在严格 `vMAJOR.MINOR.PATCH` 标签上构建并发布 arm64 二进制。
+- **隐私优先**：macOS 版不联网，Windows 版默认每天检查一次更新（只访问 GitHub Releases），可完全关闭；无遥测、无第三方 SDK；敏感值默认遮盖；敏感剪贴板 45 秒自动清除（仅 macOS）。
+- **正式版本自动发布**：GitHub Actions 仅在严格 `vMAJOR.MINOR.PATCH` 标签上发布 macOS arm64 与 Windows x64 安装包。
 
 <details>
 <summary><strong>更多界面截图：系统环境 / 暗色模式 / 加密导出</strong></summary>
@@ -47,12 +47,14 @@
 - macOS 14 Sonoma 或更高版本
 - Apple Silicon Mac（arm64）
 - 从源码构建需要 Xcode 16+ 或 Swift 6 toolchain（测试使用 Swift Testing）
+- Windows（可选）：Windows 10 1809 或更高，x64；详见 [Windows 版说明](docs/WINDOWS-PORT.md)
 
 ## 安装
 
 从 [Releases](https://github.com/Ohhu/EnvBox/releases) 下载最新 `EnvBox-x.y.z-macOS-arm64.dmg`，拖入 Applications 即可。
 
 如果首次启动被系统拦截，请在 Finder 中右键 App 并选择“打开”。
+Windows 版是独立的 Go + Wails 实现，分发形态为安装器：下载 `EnvBox-<version>-Windows-amd64-Setup.exe`，装到 `%LOCALAPPDATA%\Programs\EnvBox`（无需管理员）。命令行与 MCP 位于 `%LOCALAPPDATA%\Programs\EnvBox\bin\envbox.exe`；自更新走 GitHub Releases：默认每天检查一次，可在设置里完全关闭。构建与发布见 [docs/WINDOWS-BUILD-RELEASE.md](docs/WINDOWS-BUILD-RELEASE.md)。
 
 ## 使用
 
@@ -109,18 +111,18 @@ envbox reveal-policy --allow
 
 - 导出时可选择单个配置或全部配置，必须设置至少 8 个字符的密码。
 - 文件只包含密文；密码不会保存，丢失后无法恢复。
-- 导入只新增配置，不覆盖现有配置；同名配置自动重命名。
+- 导入只新增配置，不覆盖现有配置；同名配置自动重命名（macOS 导入会重命名；Windows 的 `envbox import` 会先按配置名与 ID 预检，冲突时提示具体是哪一条）。
 - 导入文件有大小、配置数量和变量数量上限，防止畸形文件耗尽资源。
 
 ## 安全模型
 
 | 数据 | 保护方式 |
 | --- | --- |
-| 本地配置库 | AES-256-GCM；随机 256 位密钥存于登录 Keychain；文件权限 `0600` |
+| 本地配置库 | AES-256-GCM；随机 256 位密钥，macOS 存登录 Keychain、Windows 由 DPAPI 保护（见 [SECURITY.md](SECURITY.md)）；macOS 权限 `0600`，Windows 由配置目录 ACL 保护 |
 | 导出文件 | PBKDF2-HMAC-SHA256（600,000 次）+ AES-256-GCM；独立密码 |
-| 敏感值展示 | 默认遮盖，可逐项显示；复制后标记 `org.nspasteboard.ConcealedType`，并可选 45 秒自动清空剪贴板 |
-| Shell 激活文件 | 权限 `0600`，内容为明文（Shell 必须能读取） |
-| 网络 | 不包含任何网络代码或第三方 SDK |
+| 敏感值展示 | 默认遮盖，可逐项显示；macOS 复制后标记 `org.nspasteboard.ConcealedType` 并可 45 秒自动清空剪贴板（Windows 尚未实现） |
+| Shell 激活文件 | 内容为明文（Shell 必须能读取）；macOS 权限 `0600`，Windows 由配置目录 ACL 保护 |
+| 网络 | macOS 构建不含任何网络代码或第三方 SDK；Windows 构建默认每天检查一次更新（只访问 GitHub Releases），可完全关闭 |
 
 完整威胁模型与已知边界见 [SECURITY.md](SECURITY.md)。
 
@@ -138,8 +140,8 @@ swift test
 open dist/EnvBox.app
 
 # arm64 + DMG + ZIP
-VERSION=1.0.0 ./Scripts/build-app.sh
-VERSION=1.0.0 ./Scripts/package-release.sh
+VERSION=1.1.1 ./Scripts/build-app.sh
+VERSION=1.1.1 ./Scripts/package-release.sh
 ```
 
 脚本默认使用 PATH 中的 `swift`。如需指定工具链：
@@ -154,39 +156,43 @@ SWIFT_BIN=/path/to/swift ./Scripts/build-app.sh
 
 ```bash
 # VERSION 必须与标签一致
-echo 1.0.0 > VERSION
+echo 1.1.1 > VERSION
 git add VERSION
-git commit -m "Release 1.0.0"
-git tag v1.0.0
+git commit -m "Release 1.1.1"
+git tag v1.1.1
 git push origin main --tags
 ```
 
-详细发布流程、可选签名/公证与 Secrets 配置见 [docs/RELEASE.md](docs/RELEASE.md)。
+详细发布流程与 macOS 签名凭据见 [docs/RELEASE.md](docs/RELEASE.md)；Windows 见 [docs/WINDOWS-BUILD-RELEASE.md](docs/WINDOWS-BUILD-RELEASE.md) 的「签名」一节。
 
 ## 项目结构
 
+macOS 版（Swift）：
+
 ```text
-Sources/
-  EnvBoxCore/     加密、Keychain、配置库、Shell 读取、launchctl 应用、MCP 与激活环境
-  EnvBoxUI/       SwiftUI 界面、菜单栏、设置、导入导出交互
-  EnvBox/         应用入口
-  EnvBoxHelper/   envbox 命令行与 MCP 服务器
-Tests/
-  EnvBoxCoreTests/
-Scripts/          图标、构建、打包、公证、开发运行
-Resources/        Info.plist、entitlements、AppIcon.icns
-docs/             README 截图、发布说明与图标
-.github/workflows/release.yml
+Sources/EnvBox/       SwiftUI 应用
+Sources/EnvBoxCore/   模型、加密、环境读取
+Sources/EnvBoxUI/     共享界面组件
+Sources/EnvBoxHelper/ 辅助命令行
+Resources/            图标与本地化
+Tests/                Swift Testing
+Package.swift         Swift Package 清单
+Scripts/              构建与打包脚本
 ```
 
-## 已知边界
+Windows 版（Go + Wails v3）：
 
-- 应用配置无法修改已经运行的进程环境；已打开的终端窗口与 agent 需重新打开，或经 MCP 读取。
-- 自动 Shell 集成目前仅支持 Zsh；其他 Shell 可手动 `source ~/.envbox/active.zsh`。
-- 系统环境变量在重启后可能丢失；EnvBox 默认在启动时恢复当前配置。
-- 配置文件密码无法找回。
-- 首次保存时 macOS 可能请求访问 Keychain。拒绝时保存会失败，EnvBox 不会明文保存。
-- 应用配置失败时会尝试清理本次写入；必要时重新应用。
+```text
+go.mod                     Go 模块
+cmd/envbox/                GUI 入口（内嵌前端在 cmd/envbox/web）
+cmd/envbox-cli/            CLI 与 MCP stdio server
+internal/                  业务包（注册表、配置库、加密、导出、更新）
+installer/windows/         Inno Setup 脚本
+build/windows/             图标、清单、版本资源模板
+Scripts/                   build-windows.ps1、package-windows.ps1、sign.ps1
+```
+
+`.github/workflows/` 下有两个发布工作流：`release.yml`（macOS）与 `release-windows.yml`（Windows），共用同一个 GitHub Release。
 
 ## 许可证
 

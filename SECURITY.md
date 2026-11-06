@@ -27,6 +27,11 @@ EnvBox manages secrets that are often present in a developer's shell. The design
 
 ### Local vault
 
+Windows uses the same document format with a different key store: 32 random bytes protected by DPAPI
+(`CryptProtectData`, current-user scope, `CRYPTPROTECT_UI_FORBIDDEN`) and kept in `%LOCALAPPDATA%\EnvBox\vault.key`.
+There is no Keychain-style device binding; the key is readable by any process running as the same user,
+which matches the threat model stated above.
+
 - Document: JSON envelope with format, version, Keychain key ID and ciphertext.
 - Encryption: AES-256-GCM with a fresh random nonce for every save. Authenticated additional data:
   `EnvBox.Vault.v1|keyID=...`.
@@ -51,7 +56,7 @@ EnvBox manages secrets that are often present in a developer's shell. The design
 - Import validates format version, KDF, iteration bounds, salt size, sealed size, schema, profile count,
   total variable count and every variable before merging. Files are read with a hard 20 MB bound and the
   decrypted aggregate value payload is capped at 8 MB.
-- Imports always create new profiles and regenerate internal IDs; they cannot overwrite an existing profile.
+- On macOS, imports always create new profiles and regenerate internal IDs. Windows `envbox import` keeps the archive IDs and rejects name or ID collisions before writing anything; they cannot overwrite an existing profile.
 
 ### Shell and launchd
 
@@ -81,17 +86,24 @@ EnvBox manages secrets that are often present in a developer's shell. The design
 - Sensitive copies are optionally cleared after 45 seconds, and only if the pasteboard still contains the
   value EnvBox placed there. The timer stops if EnvBox quits.
 - Clipboard contents are visible to other processes with pasteboard access; this is an OS-level limitation.
+- The Windows build does not implement sensitive clipboard handling yet, so clipboard marks and auto-clear are macOS only.
 
 ### Network and analytics
 
-- EnvBox contains no networking code, telemetry, analytics, crash reporting or third-party SDKs.
+- The macOS build contains no networking code, telemetry, analytics, crash reporting or third-party SDKs.
+- The Windows build ships an opt-out update check: it contacts the GitHub Releases API only when updating is
+  enabled, and sends no identifiers, configuration or variable values (see [docs/WINDOWS-UPDATE.md](docs/WINDOWS-UPDATE.md)).
 - Release builds are compiled from source in GitHub Actions. Signing/notarization credentials are supplied as
   repository secrets and are not present in artifacts.
 
 ### Updates
 
-EnvBox does not self-update. Users receive updates through GitHub Releases. Verify `SHA256SUMS.txt` when
+The macOS build does not self-update; users install releases from GitHub. Verify `SHA256SUMS.txt` when
 downloading from an untrusted mirror.
+
+The Windows build updates itself from GitHub Releases. An installer runs only after the GitHub asset digest,
+the published `SHA256SUMS-windows-amd64.txt` (when the release ships one) and the Authenticode signer thumbprint embedded at build time
+all match; unsigned builds fall back to a manual download link.
 
 ## Hardening notes for contributors
 
