@@ -19,6 +19,8 @@ All notable changes to EnvBox are documented here.
 ### Changed (Windows)
 
 - Update frequency is configurable (`off`/`daily`/`weekly`, default daily); `envbox update settings --skip-version` skips a release.
+- The installer speaks Simplified Chinese on Chinese Windows and English elsewhere, picked from the system display language; `/LANG=zh` or `/LANG=en` forces one.
+- Overwriting an install no longer asks the user to close EnvBox: the installer runs `EnvBox.exe --quit`, the running instance exits on its own, and the uninstaller waits the same way.
 
 ### Fixed (Windows)
 

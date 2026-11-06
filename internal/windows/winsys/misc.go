@@ -191,7 +191,9 @@ func IsInstalled() bool {
 	return exeDir == strings.ToLower(install) || strings.HasPrefix(exeDir, strings.ToLower(install)+strings.ToLower(string(os.PathSeparator)))
 }
 
-// MutexName is the single-instance name shared with the installer's AppMutex.
+// MutexName is the single-instance name. The installer looks it up to decide
+// whether EnvBox is running; it never blocks on it, because QuitEventName is
+// what actually closes the app.
 const MutexName = "EnvBox-SingleInstance-5C1F7C2E"
 
 // AcquireSingleInstance creates the named mutex. alreadyRunning is true when
@@ -203,13 +205,62 @@ func AcquireSingleInstance() (release func(), alreadyRunning bool, err error) {
 	}
 	handle, _, callErr := procCreateMutex.Call(0, 0, uintptr(unsafe.Pointer(name)))
 	if handle == 0 {
-		return nil, false, errors.New("winsys: 无法启动 EnvBox：系统拒绝创建程序锁，请确认没有安全软件拦截，详见 startup.log")
+		// Access denied usually means a release build is already running at a
+		// higher integrity level; anything else points at a security product.
+		return nil, false, fmt.Errorf("winsys: 无法启动 EnvBox：系统拒绝创建程序锁（%v），请确认没有安全软件拦截，详见 startup.log", callErr)
 	}
 	release = func() { procCloseHandle.Call(handle) }
 	if errno, ok := callErr.(syscall.Errno); ok && errno == syscall.ERROR_ALREADY_EXISTS {
 		return release, true, nil
 	}
 	return release, false, nil
+}
+
+// QuitEventName is the named event a running instance waits on. The installer
+// sets it before replacing files, so an upgrade closes the tray app instead of
+// asking the user to do it by hand. `EnvBox.exe --quit` sets it as well.
+const QuitEventName = "EnvBox-Quit-5C1F7C2E"
+
+const (
+	eventModifyState = 0x0002
+	infiniteWait     = 0xFFFFFFFF
+)
+
+// ListenForQuit creates the quit event and returns a channel that closes when
+// another process asks this instance to exit. stop releases the handle.
+func ListenForQuit() (quit <-chan struct{}, stop func(), err error) {
+	name, err := syscall.UTF16PtrFromString(QuitEventName)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Manual reset: the signal must stay set until this process exits, even if
+	// the installer sets it again while the window is still closing.
+	handle, _, callErr := procCreateEvent.Call(0, 1, 0, uintptr(unsafe.Pointer(name)))
+	if handle == 0 {
+		return nil, nil, fmt.Errorf("winsys: 无法创建退出信号：%v", callErr)
+	}
+	signal := make(chan struct{})
+	go func() {
+		procWaitForSingleObject.Call(handle, infiniteWait)
+		close(signal)
+	}()
+	return signal, func() { procCloseHandle.Call(handle) }, nil
+}
+
+// RequestQuit asks a running instance to exit. It reports whether one was
+// listening: false means no instance is running, or it predates the quit event.
+func RequestQuit() bool {
+	name, err := syscall.UTF16PtrFromString(QuitEventName)
+	if err != nil {
+		return false
+	}
+	handle, _, _ := procOpenEvent.Call(eventModifyState, 0, uintptr(unsafe.Pointer(name)))
+	if handle == 0 {
+		return false
+	}
+	defer procCloseHandle.Call(handle)
+	ok, _, _ := procSetEvent.Call(handle)
+	return ok != 0
 }
 
 // ShowError reports a fatal startup problem. The GUI is built with

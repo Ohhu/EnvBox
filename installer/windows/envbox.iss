@@ -6,6 +6,8 @@
 ;   * 唯一的正式分发形态就是安装器：不做便携版，不做 MSIX
 ;     （MSIX 容器化会拦注册表直写与 WM_SETTINGCHANGE 广播，正好是产品的全部功能）
 ;   * 每用户安装（PrivilegesRequired=lowest），不需要管理员权限，卸载也不需要
+;   * 覆盖安装时由安装器通过具名事件通知正在运行的 EnvBox 退出，不让用户手动关托盘程序
+;   * 安装界面跟随 Windows 显示语言（中文系统中文，其余英文），不弹语言选择页
 ;   * 不写任何环境变量、不写自启动项、不装 Shell 集成：这三样都碰 HKCU\Environment 或用户 profile，
 ;     必须由 App 自己用注册表 API 维护（保住 REG_EXPAND_SZ、可去重、可撤销）
 ;   * 升级不碰 %LOCALAPPDATA%\EnvBox（配置库与 DPAPI 主密钥必须继续可用）
@@ -30,6 +32,10 @@
 #ifndef IconPath
   #define IconPath ""
 #endif
+; 中文翻译所在目录；默认相对本脚本，打包脚本可传 /DLangDir=<绝对路径>
+#ifndef LangDir
+  #define LangDir "lang"
+#endif
 
 [Setup]
 ; AppId 必须长期固定，否则升级会被当成另一个产品
@@ -44,8 +50,8 @@ AppUpdatesURL={#AppUrl}/releases
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
-; 与 App 内单实例互斥体同名：安装器据此检测"EnvBox 正在运行"，升级时提示关闭而不是覆盖失败
-AppMutex=EnvBox-SingleInstance-5C1F7C2E
+; 故意不设 AppMutex：那条指令只会在启动时弹"请手动关闭程序"。运行中的实例改由
+; [Code] 里的退出事件关闭（见文件末尾），AppMutex 会让安装器在事件生效前就拦住。
 CloseApplications=yes
 RestartApplications=no
 PrivilegesRequired=lowest
@@ -62,14 +68,19 @@ MinVersion=10.0.17763
 UsePreviousAppDir=yes
 ; 静默更新时不要把"安装程序已在运行"弹成模态框
 UsePreviousLanguage=no
+; 按系统显示语言选界面语言；不弹选择页，用户仍可用 /LANG=zh 或 /LANG=en 覆盖
+LanguageDetectionMethod=uilanguage
+ShowLanguageDialog=no
 
 #if IconPath != ""
 SetupIconFile={#IconPath}
 #endif
 
 [Languages]
-; Inno 官方安装包只带英文 Default.isl；中文界面需把 Languages\ChineseSimplified.isl 放到 installer/windows/lang/ 并改这里。
-Name: "english"; MessagesFile: "compiler:Default.isl"
+; 中文翻译随仓库放在 installer/windows/lang/：Inno 官方安装包只带英文和部分欧洲语言。
+; LanguageID 在 .isl 内声明（$0804），安装器按系统显示语言自动匹配。
+Name: "en"; MessagesFile: "compiler:Default.isl"
+Name: "zh"; MessagesFile: "{#LangDir}\ChineseSimplified.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -95,3 +106,97 @@ Filename: "{app}\{#AppExe}"; Parameters: "--updated"; Flags: nowait; Check: Wiza
 [UninstallRun]
 ; 清理自启动项、Shell 集成与激活快照（PATH 集成尚未实现）
 Filename: "{app}\bin\envbox.exe"; Parameters: "uninstall-cleanup"; Flags: runhidden; RunOnceId: "EnvBoxCleanup"
+
+[CustomMessages]
+en.EnvBoxStillRunning=The installer needs to replace EnvBox's files, but EnvBox is still running.%n%nClose EnvBox from its notification-area icon, then choose Retry.
+zh.EnvBoxStillRunning=安装程序需要覆盖 EnvBox 的程序文件，但 EnvBox 仍在运行。%n%n请从通知区域图标退出 EnvBox，然后选择“重试”。
+
+[Code]
+{ EnvBox lives in the notification area, so it keeps running after the window is
+  closed, and Setup cannot replace a running executable. Instead of telling the
+  user to quit it, Setup runs "EnvBox.exe --quit": that build signals its own
+  quit event and exits within a second. AppMutex is deliberately not set, because
+  that directive blocks before this code gets a chance to run.
+
+  Builds older than --quit only re-focus their window, so the first upgrade after
+  this change still falls back to the retry dialog. }
+
+const
+  EnvBoxMutexName = 'EnvBox-SingleInstance-5C1F7C2E';
+  QuitWaitMilliseconds = 5000;
+
+function EnvBoxIsRunning(): Boolean;
+begin
+  Result := CheckForMutexes(EnvBoxMutexName);
+end;
+
+{ Asks the installed app to exit. The app answers --quit before it touches the
+  single-instance mutex, so this never looks like a second instance. Used instead
+  of a Win32 event call because Inno's script engine does not expose one. }
+function AskEnvBoxToQuit(): Boolean;
+var
+  ResultCode: Integer;
+  ExePath: String;
+begin
+  Result := False;
+  ExePath := ExpandConstant('{app}\{#AppExe}');
+  if not FileExists(ExePath) then
+    Exit;
+  Result := Exec(ExePath, '--quit', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+function WaitForEnvBoxExit(): Boolean;
+var
+  Elapsed: Integer;
+begin
+  Result := not EnvBoxIsRunning();
+  if Result then
+    Exit;
+  { No event means an older build without the listener: stop waiting and let the
+    caller fall back to asking the user. }
+  if not AskEnvBoxToQuit() then
+    Exit;
+  Elapsed := 0;
+  while EnvBoxIsRunning() and (Elapsed < QuitWaitMilliseconds) do
+  begin
+    Sleep(100);
+    Elapsed := Elapsed + 100;
+  end;
+  Result := not EnvBoxIsRunning();
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  while not WaitForEnvBoxExit() do
+  begin
+    if WizardSilent then
+    begin
+      Result := CustomMessage('EnvBoxStillRunning');
+      Exit;
+    end;
+    if MsgBox(CustomMessage('EnvBoxStillRunning'), mbError, MB_RETRYCANCEL) = IDCANCEL then
+    begin
+      Result := CustomMessage('EnvBoxStillRunning');
+      Exit;
+    end;
+  end;
+end;
+
+function InitializeUninstall(): Boolean;
+begin
+  Result := True;
+  while not WaitForEnvBoxExit() do
+  begin
+    if WizardSilent then
+    begin
+      Result := False;
+      Exit;
+    end;
+    if MsgBox(CustomMessage('EnvBoxStillRunning'), mbError, MB_RETRYCANCEL) = IDCANCEL then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+end;

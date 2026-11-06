@@ -117,7 +117,15 @@ Inno 与 PowerShell 读 `HKCU\Environment\Path` 时会自动展开 `REG_EXPAND_S
 
 - 升级：Inno 同一 `AppId` 原地覆盖，`UsePreviousAppDir=yes`；任何情况下都不删 `%LOCALAPPDATA%\EnvBox`。
 - 卸载：`[UninstallRun]` 调 `bin\envbox.exe uninstall-cleanup` 清 Run 键、Shell 集成与激活快照，再删文件。
-- `AppMutex=EnvBox-SingleInstance-5C1F7C2E` 让安装器识别正在运行的实例。
+- 覆盖安装会自动关掉正在运行的 EnvBox：`[Code]` 的 `PrepareToInstall` 先跑一次 `{app}\EnvBox.exe --quit`，那个进程只是把具名事件 `EnvBox-Quit-5C1F7C2E` 置位然后退出，真正运行的实例收到事件后自己 `Quit()`，安装器轮询单实例互斥体最多 5 秒，消失了才继续。
+- 故意**不设** `AppMutex`：那条指令会让安装器在启动时就弹"请手动关闭程序"，而它拦在 `[Code]` 之前，自动关闭代码根本没机会跑。只有`--quit` 之前的旧版本会走到"重试/取消"对话框。
+- 卸载走同一套心跳：`InitializeUninstall` 里同样先等它退出，避免删到一半发现文件被占用。
+
+### 安装界面语言
+
+`[Languages]` 两条：`compiler:Default.isl`（英文）与 `lang\ChineseSimplified.isl`（仓库自带）。`LanguageDetectionMethod=uilanguage` + `.isl` 里的 `LanguageID=$0804` 让中文 Windows 自动用中文，其余用英文；`ShowLanguageDialog=no` 不弹语言选择页，需要强制时用 `/LANG=zh` 或 `/LANG=en`。
+
+翻译文件是**部分翻译**：没列到的消息回落到英文，所以新增 Inno 版本时不用整份重译。文件必须存成 **UTF-8 带 BOM**（6.3 之前不认没有 BOM 的 UTF-8），`LanguageCodePage=936` 保留是因为部分消息仍会交给 ANSI API。`NameAndVersion`、`CreateDesktopIcon` 这类在 Inno 里属于 `[CustomMessages]` 而不是 `[Messages]`，放错段会静默回落成英文。
 
 ## CI
 

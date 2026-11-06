@@ -18,6 +18,18 @@ import (
 	"github.com/Ohhu/EnvBox/shared/ui"
 )
 
+// quitRequested reports whether this launch only asks the running instance to
+// exit. The installer sets the quit event directly; this flag is for scripts and
+// for anyone who wants to stop the tray app from a terminal.
+func quitRequested() bool {
+	for _, arg := range os.Args[1:] {
+		if arg == "--quit" {
+			return true
+		}
+	}
+	return false
+}
+
 // updatedFlag reports whether the installer started us with --updated, so the log
 // records the upgrade handoff.
 func updatedFlag() bool {
@@ -56,6 +68,12 @@ func fatal(err error) {
 }
 
 func main() {
+	if quitRequested() {
+		// Signal before touching the mutex: this process must never look like a
+		// second instance, and it must not create the quit event itself.
+		winsys.RequestQuit()
+		return
+	}
 	release, alreadyRunning, err := winsys.AcquireSingleInstance()
 	if err != nil {
 		fatal(err)
@@ -156,6 +174,24 @@ func main() {
 	})
 	envTray := newTray(app, service, mainWindow)
 	onStateChanged = envTray.applyState
+
+	// The installer signals this event before overwriting files. Without it an
+	// upgrade would stop at "please close EnvBox" and make the user quit the tray
+	// app by hand. Started right before Run so a signal cannot arrive before the
+	// event loop exists.
+	quitSignal, stopListening, listenErr := winsys.ListenForQuit()
+	if listenErr != nil {
+		// Not fatal: the window works, only the automatic close during an upgrade
+		// is lost, and the installer falls back to asking.
+		writeStartupLog("退出信号初始化失败：" + apperr.User(listenErr))
+	} else {
+		defer stopListening()
+		go func() {
+			<-quitSignal
+			writeStartupLog("收到退出信号，正在退出以便安装程序覆盖文件")
+			app.Quit()
+		}()
+	}
 
 	if err := service.StartupMaintenance(); err != nil {
 		// Not fatal: the window still works and the next launch retries, but the

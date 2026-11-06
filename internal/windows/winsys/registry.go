@@ -54,6 +54,10 @@ var (
 	procExpandEnvironmentStrings = kernel32.NewProc("ExpandEnvironmentStringsW")
 	procCreateMutex              = kernel32.NewProc("CreateMutexW")
 	procCloseHandle              = kernel32.NewProc("CloseHandle")
+	procCreateEvent              = kernel32.NewProc("CreateEventW")
+	procOpenEvent                = kernel32.NewProc("OpenEventW")
+	procSetEvent                 = kernel32.NewProc("SetEvent")
+	procWaitForSingleObject      = kernel32.NewProc("WaitForSingleObject")
 
 	procCryptProtectData   = crypt32().NewProc("CryptProtectData")
 	procCryptUnprotectData = crypt32().NewProc("CryptUnprotectData")
