@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>EnvBox</title>
+  <link rel="icon" href="icon.svg" />
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <div class="backdrop"></div>
+
+  <div id="root" class="shell" hidden>
+    <aside class="sidebar" id="sidebar"></aside>
+    <header class="titlebar" id="titlebar" style="--wails-draggable: drag"></header>
+    <main class="content" id="content"></main>
+  </div>
+
+  <div id="boot" class="boot">正在载入配置库…</div>
+  <div id="toast-host" class="toast-host"></div>
+  <div id="sheet-host"></div>
+
+  <script type="module">
+    // Wails serves its runtime at /wails/runtime.js but does not inject the tag;
+    // importing it enables --wails-draggable on the title strip. Skipped in a
+    // plain browser preview so the console stays clean.
+    if (window.chrome && window.chrome.webview) {
+      import("/wails/runtime.js").catch(function () {});
+    }
+  </script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
