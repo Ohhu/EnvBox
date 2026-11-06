@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"github.com/Ohhu/EnvBox/internal/core/apperr"
 	"github.com/Ohhu/EnvBox/internal/core/buildinfo"
@@ -61,8 +62,10 @@ func main() {
 	}
 	defer release()
 	if alreadyRunning {
-		// The other instance owns the window; starting a second one would fight
-		// over the same vault file, so this process simply exits.
+		// The other instance owns the vault, so this process exits; it does bring
+		// the running window back first, because otherwise a launch after closing
+		// to the tray would look like nothing happened.
+		focusExistingWindow("EnvBox " + buildinfo.Version)
 		return
 	}
 
@@ -97,7 +100,7 @@ func main() {
 			}
 		case "window-close":
 			if mainWindow != nil {
-				mainWindow.Close()
+				mainWindow.Hide()
 			}
 		}
 	})
@@ -144,6 +147,15 @@ func main() {
 		// .hiddenTitleBar. Wails keeps the Aero shadow and Win11 rounded corners.
 		Frameless: true,
 	})
+
+	// Closing the window leaves EnvBox in the notification area, the same contract
+	// the macOS build has with the menu bar: the app runs until it is told to quit.
+	mainWindow.OnWindowEvent(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		event.Cancel()
+		mainWindow.Hide()
+	})
+	envTray := newTray(app, service, mainWindow)
+	onStateChanged = envTray.applyState
 
 	if err := service.StartupMaintenance(); err != nil {
 		// Not fatal: the window still works and the next launch retries, but the

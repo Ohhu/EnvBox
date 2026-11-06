@@ -46,6 +46,10 @@ func newHandler(service *App, assets http.Handler) http.Handler {
 			writeJSON(w, http.StatusInternalServerError, Payload{OK: false, Message: apperr.User(err)})
 			return
 		}
+		if payload.OK && payload.State != nil {
+			// Keep the tray menu in step with edits made in the window.
+			onStateChanged(payload.State)
+		}
 		status := http.StatusOK
 		if !payload.OK {
 			status = http.StatusBadRequest

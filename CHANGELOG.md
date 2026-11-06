@@ -4,9 +4,12 @@ All notable changes to EnvBox are documented here.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-06
+
 ### Added (Windows)
 
 - Windows x64 port: Go + Wails v3 desktop app, per-user Inno Setup installer, no admin rights required.
+- Notification-area icon with the profile list, active-profile checkmark, deactivate and quit; closing the window keeps EnvBox running, and starting it again brings the existing window back.
 - CLI and MCP server at `%LOCALAPPDATA%\Programs\EnvBox\bin\envbox.exe`.
 - User environment variables written to `HKCU\Environment` with `REG_EXPAND_SZ` preserved, plus `WM_SETTINGCHANGE` notification.
 - `.envbox` export from the GUI and `envbox import` (CLI) for macOS-originated archives.

@@ -8,7 +8,7 @@
 
 | 层次 | 占工作量 | Go 的能力 | 判断 |
 | --- | --- | --- | --- |
-| 系统集成：用户环境变量注册表、`WM_SETTINGCHANGE` 广播、DPAPI、开机启动、单实例、剪贴板、托盘 | 约 80% 的复杂度 | 纯 Go、零 cgo；注册表、广播、DPAPI、单实例已实测；剪贴板与托盘尚未实现 | 比 Swift 版更省事 |
+| 系统集成：用户环境变量注册表、`WM_SETTINGCHANGE` 广播、DPAPI、开机启动、单实例、剪贴板、托盘 | 约 80% 的复杂度 | 纯 Go、零 cgo；注册表、广播、DPAPI、单实例已实测；托盘已接入，剪贴板尚未实现 | 比 Swift 版更省事 |
 | 加密与数据：AES-256-GCM 配置库、PBKDF2 导出、`.envbox` 互通 | 小 | 标准库直出，与 Swift 版字节级兼容 | 已用官方测试向量验证 |
 | 界面 | 剩下的大头 | Go **没有**成熟的 Windows 原生控件栈 | 唯一需要选型的地方：用 WebView2，不要用原生控件从零画 |
 
@@ -63,7 +63,7 @@ Wails v3 支持系统托盘与多窗口，接入后可省掉 macOS 侧 `NSStatus
 | 配置库 | AES-256-GCM + Keychain | 同算法同 AAD（`EnvBox.Vault.v1\|keyID=…`），`vault.envbox` 结构直接复用 |
 | 导入导出 | PBKDF2-HMAC-SHA256 600k + AES-256-GCM | 同参数；`.envbox` 双向可用：界面导出，`envbox import <file.envbox> --password <密码>` 导入 |
 | Shell 集成 | `~/.zshrc` 受管片段 + `active.zsh` | PowerShell `$PROFILE` 受管片段；cmd 的 AutoRun 尚未实现；Windows Terminal 直接读注册表，无需处理 |
-| 托盘快速切换 | `NSStatusItem` | 未实现（Wails v3 支持 systray，尚未接入） |
+| 托盘快速切换 | `NSStatusItem` | 已实现：Wails v3 Systray，菜单列全部配置、勾选当前项、停用、退出 |
 | MCP stdio server | Swift `envbox` helper | 同一份 Go 代码编出 `envbox.exe`（约 5 MB 单文件），比 macOS 侧更省事 |
 | 敏感剪贴板 | `NSPasteboard` 私有类型 + 45 秒清空 | 未实现（计划用 `ExcludeClipboardContentFromMonitorProcessing` + 45 秒清空） |
 | 单实例 | — | `CreateMutexW`，第二个实例静默退出 |
