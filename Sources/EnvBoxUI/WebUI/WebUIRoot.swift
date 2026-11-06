@@ -5,7 +5,7 @@ import Foundation
 /// Resolution order:
 ///   1. `ENVBOX_WEB_ROOT` — point the app at the checkout while developing.
 ///   2. `Contents/Resources/web` — what the packaging script copies.
-///   3. `cmd/envbox/web` next to `#filePath` — only for `swift run` from a checkout.
+///   3. `shared/ui/assets` next to `#filePath` — only for `swift run` from a checkout.
 enum WebUIRoot {
     static func resolve() -> URL {
         if let override = ProcessInfo.processInfo.environment["ENVBOX_WEB_ROOT"], !override.isEmpty {
@@ -16,10 +16,11 @@ enum WebUIRoot {
             return bundled
         }
         let checkout = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("cmd/envbox/web")
+            .deletingLastPathComponent() // WebUIRoot.swift
+            .deletingLastPathComponent() // WebUI
+            .deletingLastPathComponent() // EnvBoxUI
+            .deletingLastPathComponent() // Sources
+            .appendingPathComponent("shared/ui/assets")
         return checkout
     }
 }

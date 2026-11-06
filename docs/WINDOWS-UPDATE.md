@@ -1,6 +1,6 @@
 # Windows 自动更新（渠道：GitHub Releases）
 
-行为规格。实现分布在 `internal/update`（协议、校验、安装）、`internal/settings`（开关与状态）。
+行为规格。实现分布在 `internal/windows/update`（协议、校验、安装）、`internal/windows/settings`（开关与状态）。
 
 ## 边界
 
@@ -14,7 +14,7 @@
 
 | 项 | 规则 |
 | --- | --- |
-| 端点 | `GET https://api.github.com/repos/{UpdateRepo}/releases/latest`，`UpdateRepo` 由 `-X internal/buildinfo.UpdateRepo` 注入 |
+| 端点 | `GET https://api.github.com/repos/{UpdateRepo}/releases/latest`，`UpdateRepo` 由 `-X internal/core/buildinfo.UpdateRepo` 注入 |
 | 请求头 | `Accept: application/vnd.github+json`、`X-GitHub-Api-Version: 2022-11-28`、`User-Agent: EnvBox`，有缓存时带 `If-None-Match` |
 | 接受条件 | `tag_name` 匹配 `^v?(\d+)\.(\d+)\.(\d+)$`（`v` 前缀可省），`draft`/`prerelease` 均为 false |
 | 版本比较 | 三段 semver 数值比较；只有远端更新才提示，低于当前一律拒绝 |
@@ -31,7 +31,7 @@
 
 1. **传输**：仅 http(s)，TLS 1.2+，重定向域名白名单。
 2. **哈希**：GitHub 资产 `digest` 与 `SHA256SUMS-windows-amd64.txt` 交叉核对；两者都缺视为失败。
-3. **Authenticode**：`WinVerifyTrust`（`WTD_REVOKE_NONE` + `WTD_CACHE_ONLY_URL_RETRIEVAL`）验签，取签名证书 SHA-1 指纹与编译期嵌入的 `internal/buildinfo.SignerThumbprint` 比对。
+3. **Authenticode**：`WinVerifyTrust`（`WTD_REVOKE_NONE` + `WTD_CACHE_ONLY_URL_RETRIEVAL`）验签，取签名证书 SHA-1 指纹与编译期嵌入的 `internal/core/buildinfo.SignerThumbprint` 比对。
    - 未签名构建（指纹为空）不自动安装；界面给出 `https://github.com/<UpdateRepo>/releases/latest` 链接。
    - 只接受内嵌签名，catalog 签名的系统文件会被拒。
 4. **一致性**：资产名里的版本号必须等于 `tag_name`。

@@ -13,10 +13,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Ohhu/EnvBox/internal/buildinfo"
-	"github.com/Ohhu/EnvBox/internal/model"
-	"github.com/Ohhu/EnvBox/internal/vault"
-	"github.com/Ohhu/EnvBox/internal/winsys"
+	"github.com/Ohhu/EnvBox/internal/core/buildinfo"
+	"github.com/Ohhu/EnvBox/internal/core/model"
+	"github.com/Ohhu/EnvBox/internal/windows/vault"
+	"github.com/Ohhu/EnvBox/internal/windows/winsys"
 )
 
 func main() {

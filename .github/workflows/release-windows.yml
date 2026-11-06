@@ -134,11 +134,11 @@ jobs:
         shell: pwsh
         env:
           ENVBOX_SIGNER_THUMBPRINT: ${{ vars.ENVBOX_SIGNER_THUMBPRINT }}
-        run: ./Scripts/build-windows.ps1 -Arch $env:ARCH
+        run: ./Scripts/windows/build-windows.ps1 -Arch $env:ARCH
 
       - name: Package
         shell: pwsh
-        run: ./Scripts/package-windows.ps1 -Arch $env:ARCH
+        run: ./Scripts/windows/package-windows.ps1 -Arch $env:ARCH
 
       - name: Show artifacts
         shell: pwsh

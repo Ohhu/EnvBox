@@ -136,18 +136,18 @@ cd EnvBox
 swift test
 
 # 构建当前架构的 .app（开发用）
-./Scripts/build-app.sh
+./Scripts/macos/build-app.sh
 open dist/EnvBox.app
 
 # arm64 + DMG + ZIP
-VERSION=1.1.1 ./Scripts/build-app.sh
-VERSION=1.1.1 ./Scripts/package-release.sh
+VERSION=1.1.1 ./Scripts/macos/build-app.sh
+VERSION=1.1.1 ./Scripts/macos/package-release.sh
 ```
 
 脚本默认使用 PATH 中的 `swift`。如需指定工具链：
 
 ```bash
-SWIFT_BIN=/path/to/swift ./Scripts/build-app.sh
+SWIFT_BIN=/path/to/swift ./Scripts/macos/build-app.sh
 ```
 
 ## 发布
@@ -167,32 +167,28 @@ git push origin main --tags
 
 ## 项目结构
 
-macOS 版（Swift）：
+目录按“这段代码属于谁”划分：`shared/` 两端共用，`cmd/` 只放宿主，`internal/core` 是与界面无关的引擎，`internal/windows` 是 Windows 实现。macOS 沿用 SwiftPM 的默认根，Windows 沿用 Go 模块根。
 
 ```text
-Sources/EnvBox/       SwiftUI 应用
-Sources/EnvBoxCore/   模型、加密、环境读取
-Sources/EnvBoxUI/     共享界面组件
-Sources/EnvBoxHelper/ 辅助命令行
-Resources/            图标与本地化
-Tests/                Swift Testing
-Package.swift         Swift Package 清单
-Scripts/              构建与打包脚本
+shared/                   两端共用，任何一方都不拥有
+  ui/assets/              界面单源：index.html、app.js、app.css、tokens.css、图标
+  ui/embed.go             把同一批文件嵌进 Windows 可执行文件
+  design/tokens.json      颜色、圆角、间距、字号、动效的唯一来源
+internal/core/            引擎：model、cryptox、portable、apperr、buildinfo
+internal/windows/         Windows 实现：注册表、配置库、PowerShell、MCP、更新
+cmd/windows/envbox/       GUI 宿主（Wails v3，/api/state 与 /api/dispatch）
+cmd/windows/envbox-cli/   CLI 与 MCP stdio server
+Sources/EnvBox*/          macOS 宿主（SwiftUI，含 WebUI 容器）
+Resources/                图标、Info.plist、权限声明
+build/windows/            图标、清单、版本资源模板
+installer/windows/        Inno Setup 脚本
+Scripts/macos/            构建、签名、公证
+Scripts/windows/          构建、打包、签名
+Scripts/shared/           tokens 生成、无宿主预览
+docs/                     发布流程、移植记录、界面单源说明
 ```
 
-Windows 版（Go + Wails v3）：
-
-```text
-go.mod                     Go 模块
-cmd/envbox/                GUI 入口（内嵌前端在 cmd/envbox/web）
-cmd/envbox-cli/            CLI 与 MCP stdio server
-internal/                  业务包（注册表、配置库、加密、导出、更新）
-installer/windows/         Inno Setup 脚本
-build/windows/             图标、清单、版本资源模板
-Scripts/                   build-windows.ps1、package-windows.ps1、sign.ps1
-```
-
-`.github/workflows/` 下有两个发布工作流：`release.yml`（macOS）与 `release-windows.yml`（Windows），共用同一个 GitHub Release。
+平台归属与改动纪律见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。`.github/workflows/` 下有两个发布工作流：`release.yml`（macOS）与 `release-windows.yml`（Windows），共用同一个 GitHub Release。
 
 ## 许可证
 

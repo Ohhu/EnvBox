@@ -4,11 +4,11 @@
 
 ## 结论
 
-界面收敛到 **`cmd/envbox/web`** 一份源码，两端只是"宿主 + 传输层"不同：
+界面收敛到 **`shared/ui/assets`** 一份源码，两端只是"宿主 + 传输层"不同：
 
 ```
                     ┌───────────────────────────────┐
-                    │  cmd/envbox/web (单源 UI)      │
+                    │  shared/ui/assets (单源 UI)      │
                     │  index.html / app.css / app.js │
                     │  tokens.css (生成)             │
                     └──────────────┬────────────────┘
@@ -32,19 +32,19 @@
 
 | 文件 | 作用 |
 | --- | --- |
-| `design/tokens.json` | 唯一设计真源：色板、圆角、间距、字号、动效 |
-| `Scripts/gen-design-tokens.mjs` | 生成 `cmd/envbox/web/tokens.css` 与 `Sources/EnvBoxUI/Theme/DesignTokens.swift` |
-| `cmd/envbox/web/tokens.css` | 生成产物，勿手改 |
-| `cmd/envbox/web/app.css` | 共享样式（浅色/深色，全部走 CSS 变量） |
-| `cmd/envbox/web/app.js` | 三个视图：系统环境 / 配置详情 / 设置，含变量编辑抽屉 |
-| `cmd/envbox/web/icons.js` | 内嵌 SVG 图标集（SF Symbols 不可再分发，这里用同光学重量的等价图标） |
-| `cmd/envbox/web/bridge.js` | 三种传输：原生桥 / Wails HTTP / 浏览器 Demo，自动探测 |
-| `cmd/envbox/web/mock.js` | 演示数据，供预览与截图，不参与发布逻辑 |
-| `Scripts/preview-server.mjs` | 无宿主预览用的静态服务器 |
+| `shared/design/tokens.json` | 唯一设计真源：色板、圆角、间距、字号、动效 |
+| `Scripts/shared/gen-design-tokens.mjs` | 生成 `shared/ui/assets/tokens.css` 与 `Sources/EnvBoxUI/Theme/DesignTokens.swift` |
+| `shared/ui/assets/tokens.css` | 生成产物，勿手改 |
+| `shared/ui/assets/app.css` | 共享样式（浅色/深色，全部走 CSS 变量） |
+| `shared/ui/assets/app.js` | 三个视图：系统环境 / 配置详情 / 设置，含变量编辑抽屉 |
+| `shared/ui/assets/icons.js` | 内嵌 SVG 图标集（SF Symbols 不可再分发，这里用同光学重量的等价图标） |
+| `shared/ui/assets/bridge.js` | 三种传输：原生桥 / Wails HTTP / 浏览器 Demo，自动探测 |
+| `shared/ui/assets/mock.js` | 演示数据，供预览与截图，不参与发布逻辑 |
+| `Scripts/shared/preview-server.mjs` | 无宿主预览用的静态服务器 |
 | `Sources/EnvBoxUI/WebUI/*.swift` | macOS 宿主：自定义 scheme 资源服务、WKWebView、JS↔Swift 桥 |
 | `docs/ui-web/*.png` | 本次实拍的四个界面状态（1180×760） |
 
-后端小改动：`ProfileView` 增加 `updatedAt`（`internal/model.Timestamp.ISO8601()`），
+后端小改动：`ProfileView` 增加 `updatedAt`（`internal/core/model.Timestamp.ISO8601()`），
 让两端都能渲染"最后修改"这个统计卡；Go 单测已通过。
 
 ## 窗口外壳（Windows）
@@ -85,7 +85,7 @@
 ## 预览 / 截图
 
 ```bash
-node Scripts/preview-server.mjs        # http://127.0.0.1:4173
+node Scripts/shared/preview-server.mjs        # http://127.0.0.1:4173
 ```
 
 URL 参数：
@@ -111,11 +111,11 @@ URL 参数：
 
 ## 尚未完成（接入 macOS 之前的清单）
 
-1. **AppModel 适配器**：实现 `WebUIBridge`，把 14 个 action 映射到现有 `AppModel` 方法；
+1. **AppModel 适配器**：在 `Sources/EnvBoxUI/WebUI` 里实现 `WebUIBridge`，把 14 个 action 映射到现有 `AppModel` 方法；
    目前宿主只有协议与路由，没有业务映射。
 2. **入口切换**：`EnvBoxScene` 里用环境变量开关（`ENVBOX_WEB_UI=1`）在 `RootView`（SwiftUI）
    与 `WebUIView` 之间切换，保证可回退、可并行对比。
-3. **打包资源**：`Scripts/build-app.sh` 增加 `cp -R cmd/envbox/web "$APP/Contents/Resources/web"`。
+3. ~~打包资源~~：已由 `Scripts/macos/build-app.sh` 的 `cp -R shared/ui/assets "$APP/Contents/Resources/web"` 完成。
 4. **平台能力补齐**：托盘弹层（`NSStatusItem` + 无边框窗口）、快捷键菜单、敏感值 45 秒清屏、
    剪贴板私有类型——这些不能由 Web 层提供，需要在宿主里保留。
 5. **截图回归**：把 `docs/ui-web` 的四张图作为基线，补一个脚本在改动后重拍并比对。

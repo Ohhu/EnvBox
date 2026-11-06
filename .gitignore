@@ -8,7 +8,7 @@ build/*
 *.zip
 *.xcarchive
 *.syso
-cmd/envbox/wails_windows_*.syso
+cmd/windows/envbox/wails_windows_*.syso
 
 # --- Caches (local only, never committed) --------------------------------
 .build/

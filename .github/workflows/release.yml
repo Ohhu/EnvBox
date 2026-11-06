@@ -134,24 +134,24 @@ jobs:
       - name: Build arm64 app
         env:
           BUILD_NUMBER: ${{ github.run_number }}
-        run: ./Scripts/build-app.sh
+        run: ./Scripts/macos/build-app.sh
 
       - name: Notarize app
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        run: ./Scripts/notarize-app.sh
+        run: ./Scripts/macos/notarize-app.sh
 
       - name: Package DMG and ZIP
-        run: ./Scripts/package-release.sh
+        run: ./Scripts/macos/package-release.sh
 
       - name: Notarize DMG
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        run: ./Scripts/notarize-dmg.sh
+        run: ./Scripts/macos/notarize-dmg.sh
 
       - name: Refresh checksums
         run: |

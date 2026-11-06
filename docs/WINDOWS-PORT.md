@@ -86,40 +86,33 @@ UI 路线已定：**Wails v3**。理由不是性能，而是这个产品的界�
 在 HTML/CSS 里是常规工作，在 `lxn/walk` 里是几千行自绘；真·原生控件这条诉求应该换 C#，而不是让 Go 硬画。
 
 ```text
-go.mod                       根模块；`internal/*` 与 `cmd/envbox-cli` 只用标准库，GUI 依赖 Wails v3
-cmd/envbox/                  GUI 入口（Wails v3 + `/api/state`、`/api/dispatch` 两个 JSON 端点）
-cmd/envbox/web/              内嵌前端：index.html、app.css、app.js、icon.svg
-cmd/envbox-cli/              CLI + MCP stdio server（安装到 <install>\bin\envbox.exe）
-internal/buildinfo/          -ldflags 注入的版本/提交/更新仓库/签名指纹
-internal/model/              与 Swift 侧同构的 JSON 结构（时间、UUID、指纹、校验上限）
-internal/cryptox/            PBKDF2-HMAC-SHA256 + AES-256-GCM（布局与 CryptoKit 一致）
-internal/vault/              AES-256-GCM 配置库 + DPAPI 主密钥提供者
-internal/portable/           .envbox 导入导出（AAD 字符串已钉住，防漂移）
-internal/winsys/             注册表保类型读写、广播、Run 键、单实例、DPAPI、内存加密（未实现）
-internal/appenv/             激活配置 → 可执行环境（describe 指纹、exec 合并环境、输出上限）
-internal/apply/              apply/deactivate 编排：写注册表 → 广播 → PowerShell 快照 → 记账
-internal/shell/              PowerShell 集成：active.ps1 + $PROFILE 受管片段
-internal/mcp/                stdio JSON-RPC 服务器、工具实现、mcp.json 策略
-internal/update/             Releases 解析、资产选择、版本比较、摘要交叉核对（可离线单测）
+go.mod                       根模块；引擎与 Windows 实现同模块，宿主只多一个 Wails 依赖
+internal/core/               与宿主无关的引擎：model、cryptox、portable、apperr、buildinfo
+internal/windows/            Windows 实现：注册表、配置库、PowerShell、MCP、更新
+cmd/windows/envbox/          GUI 宿主（Wails v3 + /api/state、/api/dispatch 两个 JSON 端点）
+cmd/windows/envbox-cli/      CLI + MCP stdio server（安装到 <install>\bin\envbox.exe）
+shared/ui/assets/            界面单源，Windows 与 macOS 共用同一批文件
 ```
+
+完整归属见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ### 已完成并可验证的部分
 
 | 包 | 状态 | 验证方式 |
 | --- | --- | --- |
-| `internal/cryptox` | 完成 | PBKDF2 官方测试向量（c=1/2/4096）、AES-GCM 篡改检测 |
-| `internal/model` | 完成 | 时间戳与 Swift 编码逐字符一致、指纹性质测试、键名规则 |
-| `internal/portable` | 完成 | 导出→导入往返、错密码、密文篡改、迭代次数降级、AAD 钉死 |
-| `internal/vault` | 完成 | 磁盘上无明文、密钥丢失/不匹配报错、原子写 |
-| `internal/winsys` | 完成 | 注册表往返、`REG_EXPAND_SZ` 类型保真、空值与缺失区分、Apply 清理旧键、Run 键、DPAPI、单实例 |
-| `internal/appenv` | 完成 | describe 不含明文、大小写不敏感查找、环境合并去重、exec 退出码与输出截断 |
-| `internal/apply` | 完成（单测） | 记录 activeProfile/appliedKeys/指纹、切换时下发旧键、注册表失败不写库、广播失败只警告、deactivate 清空 |
-| `internal/shell` | 完成 | active.ps1 引号转义（单引号加倍）、`$PROFILE` 受管片段幂等安装/卸载、标记残缺时拒绝修改 |
-| `internal/mcp` | 完成 | initialize / tools/list / tools/call、通知不回复、策略关闭时拒绝、requiredKeys 前置校验、reveal 需显式开启 |
-| `internal/settings` | 完成 | 更新开关默认值与归一化、`DueForCheck` 时间窗口、原子写 |
-| `internal/update` | 完成 | 发布解析、版本比较、双源摘要、Authenticode 指纹、待安装记录 |
-| `cmd/envbox-cli` | 完成 | `version` / `profiles` / `describe` / `apply` / `deactivate` / `exec` / `mcp` / `policy` / `shell` / `update` / `import` / `uninstall-cleanup`（`update` 与界面共用「开发态拒绝」门禁） |
-| `cmd/envbox` | 完成 | Wails v3 窗口、单实例、JSON API；三屏界面已截图验证 |
+| `internal/core/cryptox` | 完成 | PBKDF2 官方测试向量（c=1/2/4096）、AES-GCM 篡改检测 |
+| `internal/core/model` | 完成 | 时间戳与 Swift 编码逐字符一致、指纹性质测试、键名规则 |
+| `internal/core/portable` | 完成 | 导出→导入往返、错密码、密文篡改、迭代次数降级、AAD 钉死 |
+| `internal/windows/vault` | 完成 | 磁盘上无明文、密钥丢失/不匹配报错、原子写 |
+| `internal/windows/winsys` | 完成 | 注册表往返、`REG_EXPAND_SZ` 类型保真、空值与缺失区分、Apply 清理旧键、Run 键、DPAPI、单实例 |
+| `internal/windows/appenv` | 完成 | describe 不含明文、大小写不敏感查找、环境合并去重、exec 退出码与输出截断 |
+| `internal/windows/apply` | 完成（单测） | 记录 activeProfile/appliedKeys/指纹、切换时下发旧键、注册表失败不写库、广播失败只警告、deactivate 清空 |
+| `internal/windows/shell` | 完成 | active.ps1 引号转义（单引号加倍）、`$PROFILE` 受管片段幂等安装/卸载、标记残缺时拒绝修改 |
+| `internal/windows/mcp` | 完成 | initialize / tools/list / tools/call、通知不回复、策略关闭时拒绝、requiredKeys 前置校验、reveal 需显式开启 |
+| `internal/windows/settings` | 完成 | 更新开关默认值与归一化、`DueForCheck` 时间窗口、原子写 |
+| `internal/windows/update` | 完成 | 发布解析、版本比较、双源摘要、Authenticode 指纹、待安装记录 |
+| `cmd/windows/envbox-cli` | 完成 | `version` / `profiles` / `describe` / `apply` / `deactivate` / `exec` / `mcp` / `policy` / `shell` / `update` / `import` / `uninstall-cleanup`（`update` 与界面共用「开发态拒绝」门禁） |
+| `cmd/windows/envbox` | 完成 | Wails v3 窗口、单实例、JSON API；三屏界面已截图验证 |
 
 三个只有在本机才会踩到的坑（都已修）：
 
@@ -149,7 +142,7 @@ internal/update/             Releases 解析、资产选择、版本比较、摘
 | 决定 | 结论 |
 | --- | --- |
 | 语言 | **Go**（见 [WINDOWS-LANG-GO-VS-RUST.md](WINDOWS-LANG-GO-VS-RUST.md)） |
-| 界面 | **Wails v3 + 内嵌 HTML/CSS/JS**（`cmd/envbox/web`），不用 `lxn/walk` 自绘原生控件 |
+| 界面 | **Wails v3 + 内嵌 HTML/CSS/JS**（`shared/ui/assets`），不用 `lxn/walk` 自绘原生控件 |
 | 架构 | **仅 x64（amd64）**，不发 arm64 |
 | 分发形态 | **只有安装器**（Inno Setup，每用户、免管理员），不做便携 zip、不做 MSIX |
 | 自动更新 | **做**，渠道 = 本仓库 GitHub Releases，见 [WINDOWS-UPDATE.md](WINDOWS-UPDATE.md) |
@@ -175,7 +168,7 @@ internal/update/             Releases 解析、资产选择、版本比较、摘
 
 ## 编译与发布
 
-已落地：[build-windows.ps1](../Scripts/build-windows.ps1)、[package-windows.ps1](../Scripts/package-windows.ps1)、
+已落地：[build-windows.ps1](../Scripts/windows/build-windows.ps1)、[package-windows.ps1](../Scripts/windows/package-windows.ps1)、
 [envbox.iss](../installer/windows/envbox.iss)、[release-windows.yml](../.github/workflows/release-windows.yml)，
 流程说明见 [WINDOWS-BUILD-RELEASE.md](WINDOWS-BUILD-RELEASE.md)。
 

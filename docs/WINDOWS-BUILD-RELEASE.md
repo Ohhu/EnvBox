@@ -7,7 +7,7 @@
 ```text
 本地                    打标签                    CI（tag 触发，仅 x64）              产物
 ────                    ──────                    ────────────────────              ────
-go run ./cmd/envbox  →  git tag v1.1.1        →    gate   校验标签 / VERSION     →   EnvBox-1.1.1-Windows-amd64-Setup.exe
+go run ./cmd/windows/envbox  →  git tag v1.1.1        →    gate   校验标签 / VERSION     →   EnvBox-1.1.1-Windows-amd64-Setup.exe
 go test ./...           git push --tags            build  gofmt/vet/test         SHA256SUMS-windows-amd64.txt
 build-windows.ps1                                  ├ wails3 generate syso       BUILD-INFO-amd64.txt
 package-windows.ps1                                ├ go build 两个 exe
@@ -22,10 +22,10 @@ package-windows.ps1                                ├ go build 两个 exe
 
 | 命令 | 用途 |
 | --- | --- |
-| `go run ./cmd/envbox` | 启动窗口调试（界面内嵌在 `cmd/envbox/web`，仓库没有 `frontend/`） |
+| `go run ./cmd/windows/envbox` | 启动窗口调试（界面内嵌在 `shared/ui/assets`，仓库没有 `frontend/`） |
 | `go test ./...` | 单元测试 |
-| `./Scripts/build-windows.ps1 -Configuration dev` | 不 strip 符号，便于看堆栈 |
-| `./Scripts/package-windows.ps1 -SkipInstaller` | 只生成校验值，跳过 Inno 编译 |
+| `./Scripts/windows/build-windows.ps1 -Configuration dev` | 不 strip 符号，便于看堆栈 |
+| `./Scripts/windows/package-windows.ps1 -SkipInstaller` | 只生成校验值，跳过 Inno 编译 |
 
 工具链：Go 1.26+、`wails3`（`go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0`）、Inno Setup 6、Windows SDK（`signtool.exe`，仅签名需要）。脚本缺工具时会直接报错并给出安装命令。
 
@@ -40,12 +40,12 @@ package-windows.ps1                                ├ go build 两个 exe
 
 | 用途 | 取值 | 注入方式 |
 | --- | --- | --- |
-| 用户可见版本 | `VERSION` | `-X internal/buildinfo.Version` |
+| 用户可见版本 | `VERSION` | `-X internal/core/buildinfo.Version` |
 | 构建号 | `git rev-list --count HEAD` | `-X ...BuildNumber` |
 | Windows 资源版本（必须四段） | `1.1.1.10` | 渲染 `build/windows/info.json` → `wails3 generate syso` |
 | 提交 / 时间 / 通道 | `git rev-parse --short HEAD`、UTC | `-X ...Commit`、`-X ...BuildDate`、`-X ...Channel` |
 
-`internal/buildinfo` 里这些必须是 `var`：`-X` 改不动 `const`，而 `Channel` 决定了开发期开关（`ENVBOX_CONFIG_DIR`、`ENVBOX_ENV_KEY`、`ENVBOX_SKIP_BROADCAST`、`ENVBOX_START_VIEW`）是否生效——它若停在 `dev`，发布版就能被环境变量重定向配置目录。
+`internal/core/buildinfo` 里这些必须是 `var`：`-X` 改不动 `const`，而 `Channel` 决定了开发期开关（`ENVBOX_CONFIG_DIR`、`ENVBOX_ENV_KEY`、`ENVBOX_SKIP_BROADCAST`、`ENVBOX_START_VIEW`）是否生效——它若停在 `dev`，发布版就能被环境变量重定向配置目录。
 
 三处版本必须一致：侧栏版本标签、`envbox version`、资源管理器属性。第四段来自提交数，因为 PE 资源版本不接受三段式。
 
@@ -74,8 +74,8 @@ package-windows.ps1                                ├ go build 两个 exe
 脚本支持两种凭据：
 
 ```powershell
-./Scripts/build-windows.ps1 -SignPfx $env:ENVBOX_SIGN_PFX        # CI：PFX 落盘
-./Scripts/build-windows.ps1 -SignThumbprint 3A1B...C9            # 本地：证书在用户存储
+./Scripts/windows/build-windows.ps1 -SignPfx $env:ENVBOX_SIGN_PFX        # CI：PFX 落盘
+./Scripts/windows/build-windows.ps1 -SignThumbprint 3A1B...C9            # 本地：证书在用户存储
 ```
 
 参数固定 `/fd SHA256 /td SHA256 /tr <RFC3161>`，签完立即 `verify /pa /all`。顺序是**先签两个 exe，再装进安装器，最后签安装器**；反过来安装器里躺的是未签名 exe。

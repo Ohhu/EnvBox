@@ -1,5 +1,5 @@
 ; EnvBox for Windows — Inno Setup 6 安装脚本（仅 x64，每用户安装）
-; 由 Scripts/package-windows.ps1 调用：
+; 由 Scripts/windows/package-windows.ps1 调用：
 ;   ISCC.exe /DAppVersion=1.1.0 /DAppArch=amd64 /DDistDir=<staging> /DOutDir=<dist> /DIconPath=<ico> envbox.iss
 ;
 ; 设计约束：

@@ -68,7 +68,7 @@ final class WebUIMessageRouter: NSObject, WKScriptMessageHandler {
     }
 }
 
-/// Hosts the shared UI (cmd/envbox/web) inside WKWebView.
+/// Hosts the shared UI (shared/ui/assets) inside WKWebView.
 ///
 /// The same files render on Windows via WebView2, so this view is the whole
 /// macOS "UI layer"; everything platform specific stays on the Swift side.
