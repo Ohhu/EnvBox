@@ -1,0 +1,219 @@
+name: Release (Windows)
+
+# 与 release.yml 相同的标签策略：只有严格的 vMAJOR.MINOR.PATCH 才编译与发布。
+# 两个工作流共用同一个 GitHub Release，Windows 侧只上传自己的资产并向说明追加 Windows 段。
+# 只发 x64（amd64）一个架构：安装器是唯一的正式分发形态。
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: envbox-release-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Validate stable tag
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.check.outputs.publish }}
+      version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag semantics
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::'$tag' 不是正式版本标签（vMAJOR.MINOR.PATCH），跳过 Windows 编译与发布。"
+            exit 0
+          fi
+
+          version="${tag#v}"
+          declared="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$version" != "$declared" ]]; then
+            echo "::error::标签 $tag 与 VERSION 文件（$declared）不一致。"
+            exit 1
+          fi
+
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build x64 installer
+    needs: gate
+    if: needs.gate.outputs.publish == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    environment: release
+    env:
+      VERSION: ${{ needs.gate.outputs.version }}
+      ARCH: amd64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache: true
+
+      - name: Show toolchain
+        shell: pwsh
+        run: |
+          go version
+
+      - name: Check formatting
+        shell: pwsh
+        run: |
+          $unformatted = gofmt -l .
+          if ($unformatted) {
+            Write-Host "::error::以下文件未通过 gofmt："
+            $unformatted | ForEach-Object { Write-Host "  $_" }
+            exit 1
+          }
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Install wails3 CLI
+        shell: pwsh
+        run: |
+          # 固定小版本，避免上游 CLI 行为变化影响已发布的构建
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+          Join-Path (go env GOPATH) 'bin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Decode signing certificate
+        id: cert
+        shell: pwsh
+        env:
+          ENVBOX_SIGN_PFX_BASE64: ${{ secrets.ENVBOX_SIGN_PFX_BASE64 }}
+          ENVBOX_SIGN_PFX_PASSWORD: ${{ secrets.ENVBOX_SIGN_PFX_PASSWORD }}
+        run: |
+          if (-not $env:ENVBOX_SIGN_PFX_BASE64) {
+            Write-Host "::warning::未配置 ENVBOX_SIGN_PFX_BASE64，产物将未签名，自更新会退化为'只跳转下载'。"
+            exit 0
+          }
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'envbox-signing.pfx'
+          [System.IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:ENVBOX_SIGN_PFX_BASE64))
+          "ENVBOX_SIGN_PFX=$pfxPath" >> $env:GITHUB_ENV
+          "ENVBOX_SIGN_PFX_PASSWORD=$env:ENVBOX_SIGN_PFX_PASSWORD" >> $env:GITHUB_ENV
+
+      - name: Enforce signed release policy
+        shell: pwsh
+        env:
+          REQUIRE_SIGNED_RELEASE_WINDOWS: ${{ vars.REQUIRE_SIGNED_RELEASE_WINDOWS }}
+          ENVBOX_SIGNER_THUMBPRINT: ${{ vars.ENVBOX_SIGNER_THUMBPRINT }}
+        run: |
+          if ($env:REQUIRE_SIGNED_RELEASE_WINDOWS -ne 'true') {
+            Write-Host "::notice::未强制签名；如需强制，设置仓库变量 REQUIRE_SIGNED_RELEASE_WINDOWS=true。"
+            exit 0
+          }
+          if (-not $env:ENVBOX_SIGN_PFX) { throw '已启用强制签名，但未配置 ENVBOX_SIGN_PFX_BASE64。' }
+          if (-not $env:ENVBOX_SIGNER_THUMBPRINT) { throw '已启用强制签名，但未配置 ENVBOX_SIGNER_THUMBPRINT（自更新校验需要它）。' }
+
+      - name: Build
+        shell: pwsh
+        env:
+          ENVBOX_SIGNER_THUMBPRINT: ${{ vars.ENVBOX_SIGNER_THUMBPRINT }}
+        run: ./Scripts/build-windows.ps1 -Arch $env:ARCH
+
+      - name: Package
+        shell: pwsh
+        run: ./Scripts/package-windows.ps1 -Arch $env:ARCH
+
+      - name: Show artifacts
+        shell: pwsh
+        run: Get-ChildItem dist | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: |
+            dist/*-Setup.exe
+            dist/SHA256SUMS-windows-*.txt
+            dist/BUILD-INFO-*.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove signing certificate
+        if: always()
+        shell: pwsh
+        run: Remove-Item -Force (Join-Path $env:RUNNER_TEMP 'envbox-signing.pfx') -ErrorAction SilentlyContinue
+
+  publish:
+    name: Publish release assets
+    needs: [gate, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: windows-*
+          path: assets
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -l assets
+
+      - name: Create or reuse release and upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.gate.outputs.tag }}
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # macOS 工作流可能已经创建了同一个 Release；没有就地创建，有就复用，避免互相覆盖说明。
+          for attempt in 1 2 3; do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              break
+            fi
+            gh release create "$TAG" --title "EnvBox $VERSION" --verify-tag \
+              --notes "## EnvBox $VERSION" && break || true
+            sleep $((attempt * 5))
+          done
+
+          gh release view "$TAG" --json body -q .body > body.md || printf '## EnvBox %s\n' "$VERSION" > body.md
+
+          if ! grep -q 'envbox-windows-assets' body.md; then
+            # 引号定界：正文里的反引号必须原样保留，占位符稍后用 sed 展开。
+            cat >> body.md <<'EOF'
+
+          <!-- envbox-windows-assets -->
+          ### Windows（x64）
+
+          - `EnvBox-__VERSION__-Windows-amd64-Setup.exe`：每用户安装，不需要管理员权限，带开始菜单与卸载器
+          - 命令行与 MCP 服务器随安装包一起装到 `<安装目录>\bin\envbox.exe`
+          - 校验值：`SHA256SUMS-windows-amd64.txt`
+
+          安装后可在 设置 → 更新 里检查新版本；更新走本仓库的 Releases，可随时关闭。
+          首次运行时如被 SmartScreen 拦截，选择“更多信息 → 仍要运行”。MCP 客户端把命令指向
+          `<安装目录>\bin\envbox.exe mcp`。
+          EOF
+          sed -i "s/__VERSION__/${VERSION}/g" body.md
+            gh release edit "$TAG" --notes-file body.md
+          fi
+
+          # 只上传安装器与校验文件：raw exe 只作为 CI artifact 保留，避免出现第二条分发路径
+          gh release upload "$TAG" --clobber \
+            assets/*-Setup.exe \
+            assets/SHA256SUMS-windows-*.txt \
+            assets/BUILD-INFO-*.txt

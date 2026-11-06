@@ -1,0 +1,18 @@
+{
+  "fixed": {
+    "file_version": "0.0.0.0",
+    "product_version": "0.0.0.0"
+  },
+  "info": {
+    "0000": {
+      "CompanyName": "Ohhu",
+      "FileDescription": "EnvBox",
+      "FileVersion": "0.0.0.0",
+      "InternalName": "EnvBox",
+      "LegalCopyright": "MIT License",
+      "OriginalFilename": "EnvBox.exe",
+      "ProductName": "EnvBox",
+      "ProductVersion": "0.0.0.0"
+    }
+  }
+}
