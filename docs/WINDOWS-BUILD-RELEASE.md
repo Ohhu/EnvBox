@@ -116,8 +116,10 @@ Inno 与 PowerShell 读 `HKCU\Environment\Path` 时会自动展开 `REG_EXPAND_S
 ### 升级与卸载
 
 - 升级：Inno 同一 `AppId` 原地覆盖，`UsePreviousAppDir=yes`；任何情况下都不删 `%LOCALAPPDATA%\EnvBox`。
+- 目标位置页强制显示（`DisableDirPage=no`）：默认值 `auto` 在检测到已安装时会把整页藏掉，用户既看不到装到哪、也没法改。
 - 卸载：`[UninstallRun]` 调 `bin\envbox.exe uninstall-cleanup` 清 Run 键、Shell 集成与激活快照，再删文件。
-- 覆盖安装会自动关掉正在运行的 EnvBox：`[Code]` 的 `PrepareToInstall` 先跑一次 `{app}\EnvBox.exe --quit`，那个进程只是把具名事件 `EnvBox-Quit-5C1F7C2E` 置位然后退出，真正运行的实例收到事件后自己 `Quit()`，安装器轮询单实例互斥体最多 5 秒，消失了才继续。
+- 覆盖安装会自动关掉正在运行的 EnvBox，而且**在向导出现之前**就先关：`InitializeSetup` → 跑一次 `EnvBox.exe --quit`，那个进程只是把具名事件 `EnvBox-Quit-5C1F7C2E` 置位然后退出，真正运行的实例收到事件后自己 `Quit()`；安装器轮询单实例互斥体最多 5 秒。`PrepareToInstall` 在复制文件前再查一次，防止向导期间用户又把程序打开。
+- `EnvBox.exe` 路径先取 `{app}`，取不到再读上一版卸载项里的 `Inno Setup: App Path`：向导出现前 `{app}` 未必已经指向旧目录。
 - 故意**不设** `AppMutex`：那条指令会让安装器在启动时就弹"请手动关闭程序"，而它拦在 `[Code]` 之前，自动关闭代码根本没机会跑。只有`--quit` 之前的旧版本会走到"重试/取消"对话框。
 - 卸载走同一套心跳：`InitializeUninstall` 里同样先等它退出，避免删到一半发现文件被占用。
 

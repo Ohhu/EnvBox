@@ -66,6 +66,9 @@ UninstallDisplayIcon={app}\{#AppExe}
 MinVersion=10.0.17763
 ; 覆盖安装时保留用户上次选择的目录
 UsePreviousAppDir=yes
+; DisableDirPage 的默认值是 auto：检测到已安装过就整页隐藏，用户看不到装到哪、
+; 也没法改。这里强制显示，页里预填上次的目录（UsePreviousAppDir），多一次"下一步"。
+DisableDirPage=no
 ; 静默更新时不要把"安装程序已在运行"弹成模态框
 UsePreviousLanguage=no
 ; 按系统显示语言选界面语言；不弹选择页，用户仍可用 /LANG=zh 或 /LANG=en 覆盖
@@ -130,6 +133,22 @@ begin
   Result := CheckForMutexes(EnvBoxMutexName);
 end;
 
+{ The installed EnvBox.exe. The app-dir constant is not guaranteed to point at
+  the previous install this early, so fall back to the path the previous
+  uninstall entry recorded before giving up. }
+function EnvBoxExePath(): String;
+var
+  InstallPath: String;
+begin
+  Result := ExpandConstant('{app}\{#AppExe}');
+  if FileExists(Result) then
+    Exit;
+  Result := '';
+  if RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}_is1', 'Inno Setup: App Path', InstallPath) then
+    if FileExists(InstallPath + '\{#AppExe}') then
+      Result := InstallPath + '\{#AppExe}';
+end;
+
 { Asks the installed app to exit. The app answers --quit before it touches the
   single-instance mutex, so this never looks like a second instance. Used instead
   of a Win32 event call because Inno's script engine does not expose one. }
@@ -139,8 +158,8 @@ var
   ExePath: String;
 begin
   Result := False;
-  ExePath := ExpandConstant('{app}\{#AppExe}');
-  if not FileExists(ExePath) then
+  ExePath := EnvBoxExePath();
+  if ExePath = '' then
     Exit;
   Result := Exec(ExePath, '--quit', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
@@ -165,25 +184,10 @@ begin
   Result := not EnvBoxIsRunning();
 end;
 
-function PrepareToInstall(var NeedsRestart: Boolean): String;
-begin
-  Result := '';
-  while not WaitForEnvBoxExit() do
-  begin
-    if WizardSilent then
-    begin
-      Result := CustomMessage('EnvBoxStillRunning');
-      Exit;
-    end;
-    if MsgBox(CustomMessage('EnvBoxStillRunning'), mbError, MB_RETRYCANCEL) = IDCANCEL then
-    begin
-      Result := CustomMessage('EnvBoxStillRunning');
-      Exit;
-    end;
-  end;
-end;
-
-function InitializeUninstall(): Boolean;
+{ Closes a running EnvBox, asking the user only when the automatic close failed.
+  Called once at startup, so the wizard never runs against a live instance, and
+  again right before files are copied, in case the user relaunched it. }
+function CloseRunningEnvBox(): Boolean;
 begin
   Result := True;
   while not WaitForEnvBoxExit() do
@@ -199,4 +203,21 @@ begin
       Exit;
     end;
   end;
+end;
+
+function InitializeSetup(): Boolean;
+begin
+  Result := CloseRunningEnvBox();
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  if not CloseRunningEnvBox() then
+    Result := CustomMessage('EnvBoxStillRunning');
+end;
+
+function InitializeUninstall(): Boolean;
+begin
+  Result := CloseRunningEnvBox();
 end;
