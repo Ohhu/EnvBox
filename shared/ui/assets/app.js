@@ -23,11 +23,16 @@ const state = {
   filter: "all",
   query: "",
   systemReveal: false,
+  revealedSystem: new Set(),
   sheet: null,
   dialog: null,
   saveState: "saved",
   busy: false,
-  revealed: new Set()
+  revealed: new Set(),
+  // Plaintext of secrets the user has asked to see. The host keeps secrets
+  // masked on the wire, so each value is fetched once and kept for the session.
+  plain: {},
+  mcpClient: "generic"
 };
 
 const TINT_NAMES = { aurora: "极光", ocean: "海洋", ember: "余烬", orchid: "兰紫", lime: "青柠", slate: "石墨" };
@@ -96,6 +101,13 @@ function resultLabel(code) {
   if (!code) return "";
   if (code.indexOf("update-available:") === 0) return "发现新版本 " + code.slice(18);
   return map[code] || code;
+}
+
+function fmtBytes(bytes) {
+  const size = Number(bytes) || 0;
+  if (size < 1024) return size + " B";
+  if (size < 1024 * 1024) return (size / 1024).toFixed(1) + " KB";
+  return (size / (1024 * 1024)).toFixed(1) + " MB";
 }
 
 /* ---------------- toast ---------------- */
@@ -225,6 +237,8 @@ function profileHTML() {
     + '</div>'
     + '<div class="page-actions">'
     + '<button class="btn icon-only" data-act="edit-profile" title="编辑名称与备注">' + icon("pencil", 15) + '</button>'
+    + '<button class="btn icon-only" data-act="duplicate-profile" data-id="' + esc(profile.id) + '" title="复制配置">' + icon("copy", 15) + '</button>'
+    + '<button class="btn icon-only" data-act="export-profile" data-id="' + esc(profile.id) + '" title="导出此配置">' + icon("download", 15) + '</button>'
     + '<button class="btn icon-only" data-act="delete-profile" title="删除配置">' + icon("trash", 15) + '</button>'
     + (profile.active
       ? '<button class="btn" data-act="apply" data-id="' + esc(profile.id) + '">' + icon("refresh", 13) + '重新应用</button>'
@@ -272,16 +286,18 @@ function variableRowsHTML(profile) {
 
 function variableRowHTML(variable) {
   const masked = variable.secret && !state.revealed.has(variable.id);
+  const shown = masked ? "••••••••" : plainOf(variable);
   return '<div class="vrow' + (variable.enabled ? "" : " disabled") + '">'
     + '<button class="switch' + (variable.enabled ? " on" : "") + '" data-act="toggle" data-vid="' + esc(variable.id) + '" role="switch" aria-checked="' + (variable.enabled ? "true" : "false") + '" aria-label="启用 ' + esc(variable.key) + '"></button>'
     + '<div style="min-width:0">'
-    + '<div class="vkey">' + (variable.secret ? icon("lock", 11) : "") + esc(variable.key) + '</div>'
+    + '<div class="vkey"><span class="vlock">' + (variable.secret ? icon("lock", 11) : "") + '</span>' + esc(variable.key) + '</div>'
     + (variable.note ? '<div class="vnote">' + esc(variable.note) + '</div>' : '')
     + '</div>'
-    + '<div class="vval' + (masked ? " masked" : "") + '">' + esc(masked ? "••••••••" : variable.value) + '</div>'
+    + '<div class="vval' + (masked ? " masked" : "") + '">' + esc(shown) + '</div>'
     + '<div class="vacts">'
     + (variable.secret ? '<button class="icon-btn" data-act="reveal" data-vid="' + esc(variable.id) + '" title="' + (masked ? "显示" : "隐藏") + '">' + icon(masked ? "eye" : "eyeOff", 13) + '</button>' : "")
-    + '<button class="icon-btn" data-act="copy" data-vid="' + esc(variable.id) + '" title="复制">' + icon("copy", 13) + '</button>'
+    + '<button class="icon-btn" data-act="copy-key" data-vid="' + esc(variable.id) + '" title="复制变量名">' + icon("tag", 13) + '</button>'
+    + '<button class="icon-btn" data-act="copy-value" data-vid="' + esc(variable.id) + '" title="复制值">' + icon("copy", 13) + '</button>'
     + '<button class="icon-btn" data-act="edit" data-vid="' + esc(variable.id) + '" title="编辑">' + icon("pencil", 13) + '</button>'
     + '</div></div>';
 }
@@ -332,12 +348,19 @@ function systemRowsHTML() {
   const rows = visibleSystem();
   if (!rows.length) return '<div class="empty">没有匹配的变量</div>';
   return rows.map(function (variable) {
-    const hidden = variable.sensitive && !state.systemReveal;
+    // macOS conceals each sensitive row on its own as well as all at once.
+    const hidden = variable.sensitive && !state.systemReveal && !state.revealedSystem.has(variable.key);
+    const key = esc(variable.key);
     return '<div class="srow">'
-      + '<div class="vkey">' + (variable.sensitive ? icon("lock", 11) : "") + esc(variable.key) + '</div>'
+      + '<div class="vkey"><span class="vlock">' + (variable.sensitive ? icon("lock", 11) : "") + '</span>' + esc(variable.key) + '</div>'
       + '<div class="vval' + (hidden ? " masked" : "") + '">' + esc(hidden ? "••••••••" : variable.value) + '</div>'
       + '<div><span class="badge">' + kindLabel(variable.kind) + '</span></div>'
       + '<div><span class="badge' + (variable.applied ? " envbox" : "") + '">' + (variable.applied ? "EnvBox" : "用户") + '</span></div>'
+      + '<div class="vacts">'
+      + (variable.sensitive ? '<button class="icon-btn" data-act="reveal-system" data-key="' + key + '" title="' + (hidden ? "显示值" : "隐藏值") + '">' + icon(hidden ? "eye" : "eyeOff", 13) + '</button>' : "")
+      + '<button class="icon-btn" data-act="copy-key" data-scope="system" data-key="' + key + '" title="复制变量名">' + icon("tag", 13) + '</button>'
+      + '<button class="icon-btn" data-act="copy-value" data-scope="system" data-key="' + key + '" title="复制值">' + icon("copy", 13) + '</button>'
+      + '</div>'
       + '</div>';
   }).join("");
 }
@@ -373,8 +396,9 @@ function settingsHTML() {
 
   html += '<div class="panel"><div class="panel-head"><h3>MCP</h3></div>'
     + settingRow("启用 MCP 服务器", "让 Claude、Cursor 等客户端读取配置库。", switchHTML("mcp-enabled", mcp.enabled))
-    + settingRow("允许读取明文", "关闭时 env_reveal 只返回掩码。", switchHTML("mcp-reveal", mcp.allowReveal))
-    + commandRow("客户端命令", "在 Claude、Cursor 等客户端的 MCP 配置里填写这一行。", data.mcpCommand)
+    + (mcp.enabled
+      ? mcpWiringHTML() + settingRow("允许读取明文", "关闭时 env_reveal 只返回掩码。", switchHTML("mcp-reveal", mcp.allowReveal))
+      : "")
     + '</div>';
 
   const meta = [];
@@ -390,6 +414,7 @@ function settingsHTML() {
     + '</div>';
 
   html += '<div class="panel"><div class="panel-head"><h3>数据</h3></div>'
+    + settingRow("加密导入", "读取其他平台导出的 .envbox。重名配置自动改名，不会覆盖现有配置。", '<button class="btn" data-act="import">导入 .envbox</button>')
     + settingRow("加密导出", "使用独立密码保护的可移植 .envbox 文件。", '<button class="btn" data-act="export">导出全部配置</button>')
     + settingRow("配置库位置", "AES-256-GCM 加密，密钥由系统钥匙串/DPAPI 保护。", '<span class="setting-value">仅本机</span>')
     + '</div>';
@@ -404,13 +429,31 @@ function settingRow(title, description, control) {
     + '<div style="display:flex;align-items:center;gap:8px">' + control + '</div></div>';
 }
 
-function commandRow(title, description, command) {
-  return '<div class="setting command"><div>'
-    + '<div class="setting-title">' + esc(title) + '</div>'
-    + '<div class="setting-desc">' + esc(description) + '</div>'
-    + '<div class="cmd-row"><code class="cmd">' + esc(command) + '</code>'
-    + '<button class="btn" data-act="copy-command">' + icon("copy", 13) + '复制</button></div>'
+// mcpWiringHTML mirrors the macOS settings card: pick a client, see the exact
+// config, copy it, or copy a prompt that makes an agent wire itself up.
+function mcpWiringHTML() {
+  const clients = (state.data && state.data.mcpClients) || [];
+  if (!clients.length) return "";
+  const client = clients.find(function (item) { return item.id === state.mcpClient; }) || clients[0];
+  return '<div class="setting wide"><div>'
+    + '<div class="setting-title">客户端接入</div>'
+    + '<div class="setting-desc">选中客户端后复制配置；提示词交给 agent，让它自己接上。</div>'
+    + '<div class="chips" style="margin-top:10px">'
+    + clients.map(function (item) {
+      return '<button class="chip' + (item.id === client.id ? " active" : "") + '" data-act="mcp-client" data-value="' + esc(item.id) + '">' + esc(item.name) + '</button>';
+    }).join("")
+    + '</div>'
+    + '<pre class="snippet">' + esc(client.snippet) + '</pre>'
+    + '<div class="cmd-row">'
+    + '<button class="btn primary" data-act="mcp-copy-snippet">' + icon("copy", 13) + esc(client.snippetLabel) + '</button>'
+    + '<button class="btn" data-act="mcp-copy-prompt">' + icon("sparkles", 13) + '复制提示词</button>'
+    + '</div>'
     + '</div></div>';
+}
+
+function currentMCPClient() {
+  const clients = (state.data && state.data.mcpClients) || [];
+  return clients.find(function (item) { return item.id === state.mcpClient; }) || clients[0] || null;
 }
 
 function switchHTML(act, on) {
@@ -626,8 +669,9 @@ function refreshList() {
 
 // Actions that write the vault; everything else is read-only or machine state.
 const PERSIST_ACTIONS = {
-  "save-profile": 1, "delete-profile": 1, "save-settings": 1, "set-autostart": 1,
-  "set-mcp": 1, "shell-install": 1, "shell-uninstall": 1, "export": 1
+  "save-profile": 1, "delete-profile": 1, "duplicate-profile": 1, "save-settings": 1,
+  "set-autostart": 1, "set-mcp": 1, "shell-install": 1, "shell-uninstall": 1,
+  "export": 1, "import": 1
 };
 
 function isPersistence(action) {
@@ -661,10 +705,51 @@ async function run(action, payload) {
   }
 }
 
-async function copyValue(text) {
+// selectProfile switches to the profile view with one profile selected; actions
+// that create a profile (duplicate, import) use it to land on the new one.
+function selectProfile(id) {
+  if (!id) return;
+  state.selected = id;
+  state.view = "profiles";
+  state.query = "";
+  state.filter = "all";
+  render();
+}
+
+// plainOf returns the value to render: secrets keep the mask until the user
+// asks for them, then the fetched plaintext is used from then on.
+function plainOf(variable) {
+  if (!variable) return "";
+  if (!variable.secret) return variable.value;
+  const cached = state.plain[variable.id];
+  return cached === undefined ? variable.value : cached;
+}
+
+// plainValue resolves a secret to its real text. The host answers "reveal" with
+// one value so /api/state can stay masked; the answer is cached for the session.
+async function plainValue(variable) {
+  if (!variable) throw new Error("变量不存在");
+  if (!variable.secret) return variable.value;
+  const cached = state.plain[variable.id];
+  if (cached !== undefined) return cached;
+  const result = await bridge.dispatch("reveal", { id: variable.id });
+  if (!result || result.ok === false) throw new Error((result && result.message) || "无法读取明文");
+  state.plain[variable.id] = result.value;
+  return result.value;
+}
+
+// copyValue goes through the host so a secret carries the clipboard formats that
+// keep it out of history and cloud sync, and disappears 45 s later.
+async function copyValue(text, sensitive, message) {
+  const flags = Boolean(sensitive);
+  const result = await bridge.dispatch("copy", { value: text, sensitive: flags }).catch(function () { return null; });
+  if (result && result.ok !== false) {
+    toast(message || result.message || "已复制");
+    return;
+  }
   try {
     await navigator.clipboard.writeText(text);
-    toast("已复制");
+    toast(message || (flags ? "已复制，请尽快粘贴" : "已复制"));
   } catch (error) {
     const area = document.createElement("textarea");
     area.value = text;
@@ -673,6 +758,18 @@ async function copyValue(text) {
     try { document.execCommand("copy"); toast("已复制"); } catch (inner) { toast("复制失败", true); }
     area.remove();
   }
+}
+
+// clipboardSubject returns what a row's copy buttons act on: a profile variable
+// (whose value may still need revealing) or a live system variable.
+function clipboardSubject(target) {
+  if ((target.getAttribute("data-scope") || "") === "system") {
+    const key = target.getAttribute("data-key") || "";
+    const variable = (state.data.system || []).find(function (item) { return item.key === key; });
+    return variable ? { key: variable.key, value: variable.value, sensitive: variable.sensitive } : null;
+  }
+  const variable = variableById(target.getAttribute("data-vid"));
+  return variable ? { key: variable.key, variable: variable, sensitive: variable.secret } : null;
 }
 
 function variableById(id) {
@@ -814,6 +911,7 @@ async function persistVariableSheet(sheet) {
   sheet.draft = { id: sheet.draft.id, key: key, value: value, note: note, enabled: enabled, secret: secret };
   const result = await run("save-profile", { profile: next });
   if (!result || result.ok === false) return;
+  if (secret && sheet.draft.id) state.plain[sheet.draft.id] = value;
   state.sheet = null;
   render();
 }
@@ -921,22 +1019,61 @@ document.addEventListener("click", async function (event) {
 
   if (act === "reveal") {
     const id = target.getAttribute("data-vid");
-    if (state.revealed.has(id)) state.revealed.delete(id);
-    else state.revealed.add(id);
+    if (state.revealed.has(id)) {
+      state.revealed.delete(id);
+      render();
+      return;
+    }
+    const variable = variableById(id);
+    try {
+      await plainValue(variable);
+      state.revealed.add(id);
+    } catch (error) {
+      toast(error.message, true);
+    }
     render();
     return;
   }
 
-  if (act === "copy") {
-    const variable = variableById(target.getAttribute("data-vid"));
-    if (variable) copyValue(variable.value);
+  if (act === "copy-key" || act === "copy-value") {
+    const subject = clipboardSubject(target);
+    if (!subject) return;
+    try {
+      if (act === "copy-key") {
+        await copyValue(subject.key, false, "已复制变量名");
+      } else if (subject.variable) {
+        await copyValue(await plainValue(subject.variable), subject.sensitive);
+      } else {
+        await copyValue(subject.value, subject.sensitive);
+      }
+    } catch (error) {
+      toast(error.message, true);
+    }
+    return;
+  }
+
+  if (act === "reveal-system") {
+    const key = target.getAttribute("data-key") || "";
+    if (state.revealedSystem.has(key)) state.revealedSystem.delete(key);
+    else state.revealedSystem.add(key);
+    render();
     return;
   }
 
   if (act === "edit") {
     const variable = variableById(target.getAttribute("data-vid"));
     if (!variable) return;
-    state.sheet = { kind: "variable", index: 1, draft: { id: variable.id, key: variable.key, value: variable.value, note: variable.note, enabled: variable.enabled, secret: variable.secret } };
+    let value = variable.value;
+    if (variable.secret) {
+      // Editing needs the real text, not the mask the list view carries.
+      try {
+        value = await plainValue(variable);
+      } catch (error) {
+        toast(error.message, true);
+        return;
+      }
+    }
+    state.sheet = { kind: "variable", index: 1, draft: { id: variable.id, key: variable.key, value: value, note: variable.note, enabled: variable.enabled, secret: variable.secret } };
     render();
     const input = document.getElementById("f-key");
     if (input) input.focus();
@@ -978,6 +1115,42 @@ document.addEventListener("click", async function (event) {
     return;
   }
 
+  if (act === "duplicate-profile") {
+    const result = await run("duplicate-profile", { id: target.getAttribute("data-id") });
+    if (result && result.focus) selectProfile(result.focus);
+    return;
+  }
+
+  if (act === "export-profile") {
+    const profile = currentProfile();
+    if (!profile) return;
+    const passphrase = await askPassword({
+      title: "导出「" + profile.name + "」",
+      message: "只导出这一个配置。文件用这个密码加密，导入时需要同一个密码。",
+      label: "密码（至少 8 位）",
+      confirmLabel: "导出"
+    });
+    if (!passphrase) return;
+    await run("export", { passphrase: passphrase, ids: [profile.id] });
+    return;
+  }
+
+  if (act === "import") {
+    // The host owns the file: the page only learns its name and size.
+    const picked = await run("import-pick");
+    if (!picked || picked.ok === false || !picked.pick) return;
+    const passphrase = await askPassword({
+      title: "导入 " + picked.pick.name,
+      message: fmtBytes(picked.pick.bytes) + "。输入导出时设置的密码；重名配置会自动改名。",
+      label: "密码（至少 8 位）",
+      confirmLabel: "导入"
+    });
+    if (!passphrase) return;
+    const result = await run("import", { passphrase: passphrase });
+    if (result && result.focus) selectProfile(result.focus);
+    return;
+  }
+
   if (act === "refresh") {
     try {
       state.data = await bridge.state();
@@ -1016,8 +1189,16 @@ document.addEventListener("click", async function (event) {
   if (act === "update-download") { await run("update-download"); return; }
   if (act === "update-install") { await run("update-install"); return; }
 
-  if (act === "copy-command") {
-    copyValue(state.data.mcpCommand || "");
+  if (act === "mcp-client") {
+    state.mcpClient = target.getAttribute("data-value") || "generic";
+    render();
+    return;
+  }
+
+  if (act === "mcp-copy-snippet" || act === "mcp-copy-prompt") {
+    const client = currentMCPClient();
+    if (!client) return;
+    await copyValue(act === "mcp-copy-prompt" ? client.prompt : client.snippet, false);
     return;
   }
 

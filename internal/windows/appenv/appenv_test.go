@@ -92,7 +92,7 @@ func TestValueAndMergeEnvironment(t *testing.T) {
 
 func TestExecuteCapturesOutputAndExitCode(t *testing.T) {
 	p := newProvider(t)
-	result, err := p.Execute(context.Background(), "echo %ENVBOX_ALPHA%", 20*time.Second)
+	result, err := p.Execute(context.Background(), "echo %ENVBOX_ALPHA%", 20*time.Second, ExecuteOptions{})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestExecuteCapturesOutputAndExitCode(t *testing.T) {
 		t.Fatalf("expected the profile value in stdout, got %q", result.Stdout)
 	}
 
-	failing, err := p.Execute(context.Background(), "exit 7", 20*time.Second)
+	failing, err := p.Execute(context.Background(), "exit 7", 20*time.Second, ExecuteOptions{})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}
@@ -112,10 +112,27 @@ func TestExecuteCapturesOutputAndExitCode(t *testing.T) {
 	}
 }
 
+// TestExecuteLoginStillUsesTheProfile guards the registry overlay: reading
+// HKCU must not shadow the active profile's variables, and a failed registry
+// read must not stop the command from running.
+func TestExecuteLoginStillUsesTheProfile(t *testing.T) {
+	p := newProvider(t)
+	result, err := p.Execute(context.Background(), "echo %ENVBOX_ALPHA%", 20*time.Second, ExecuteOptions{Login: true})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("exit=%d stderr=%s", result.ExitCode, result.Stderr)
+	}
+	if !strings.Contains(strings.ToLower(string(result.Stdout)), "alpha-value") {
+		t.Fatalf("profile value lost with login: %q", result.Stdout)
+	}
+}
+
 func TestExecuteTruncatesLargeOutput(t *testing.T) {
 	p := newProvider(t)
 	p.MaxOutputBytes = 128
-	result, err := p.Execute(context.Background(), "for /L %i in (1,1,200) do @echo 0123456789", 30*time.Second)
+	result, err := p.Execute(context.Background(), "for /L %i in (1,1,200) do @echo 0123456789", 30*time.Second, ExecuteOptions{})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}

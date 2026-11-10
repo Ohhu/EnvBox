@@ -75,7 +75,7 @@ func usage() {
   envbox describe [KEY...]           输出变量长度与指纹，绝不输出明文
   envbox apply [配置名或ID]          把配置写入当前用户环境并记录激活状态
   envbox deactivate                  移除上次激活写入的变量
-  envbox exec [--] <命令> [参数...]   在激活配置的环境里执行命令
+  envbox exec [--login] [--] <命令>   在激活配置的环境里执行命令（--login 先重读注册表）
   envbox mcp                         MCP stdio 服务器
   envbox policy [--show|--enable|--disable|--allow-reveal|--deny-reveal]
   envbox shell <status|install|uninstall>
@@ -193,15 +193,24 @@ func cmdDeactivate() {
 }
 
 func cmdExec(args []string) {
-	if len(args) > 0 && args[0] == "--" {
-		args = args[1:]
+	login := false
+	for len(args) > 0 {
+		switch args[0] {
+		case "--login", "-l":
+			login = true
+			args = args[1:]
+			continue
+		case "--":
+			args = args[1:]
+		}
+		break
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "用法：envbox exec [--] <命令> [参数...]")
+		fmt.Fprintln(os.Stderr, "用法：envbox exec [--login] [--] <命令> [参数...]")
 		os.Exit(1)
 	}
 	provider := newProvider()
-	env, err := provider.MergedEnvironment()
+	env, err := provider.Environment(login)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "读取配置库失败："+apperr.User(err))
 		os.Exit(1)

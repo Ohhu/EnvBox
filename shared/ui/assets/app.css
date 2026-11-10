@@ -199,6 +199,11 @@ html, body {
 
 .nav {
   position: relative;
+  /* Flex column so the system row stretches like the profile rows do. As a block,
+     the <button> shrink-wrapped its content and its hover highlight stopped 65px
+     short of the selection pill behind it. */
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -523,7 +528,9 @@ html, body {
 .rows { display: flex; flex-direction: column; }
 .vrow {
   display: grid;
-  grid-template-columns: 46px minmax(150px, 1.05fr) minmax(120px, 1.25fr) 62px;
+  /* The action column is fixed, not auto: a row with a reveal button would otherwise
+     widen it and shift every other column in that row by 26px. */
+  grid-template-columns: 46px minmax(150px, 1.05fr) minmax(120px, 1.25fr) 110px;
   align-items: center;
   gap: 14px;
   min-height: 58px;
@@ -564,8 +571,11 @@ html, body {
 }
 .vval.masked { letter-spacing: .16em; }
 .vacts { display: flex; justify-content: flex-end; gap: 2px; opacity: .55; }
-.vrow:hover .vacts { opacity: 1; }
-.vacts .icon-btn { border-color: transparent; background: transparent; width: 26px; height: 26px; }
+.vrow:hover .vacts, .srow:hover .vacts { opacity: 1; }
+/* margin-left:auto belongs to the standalone utility buttons; inside a row it eats the
+   leftover space and shifts the icons off the column edge (a row without a reveal button
+   ended up 14px off). */
+.vacts .icon-btn { margin-left: 0; border-color: transparent; background: transparent; width: 26px; height: 26px; }
 .vacts .icon-btn:hover { background: var(--c-raised); }
 
 /* switch */
@@ -802,10 +812,13 @@ html, body {
 .head-copy { min-width: 0; }
 .toolbar-right { margin-left: auto; }
 .vkey svg { flex: none; color: var(--c-text-tertiary); }
+/* The lock is always in the layout, empty for plain variables, so a masked row's key
+   starts at the same x as every other row's. */
+.vlock { display: inline-flex; align-items: center; flex: none; width: 11px; }
 
 .srow {
   display: grid;
-  grid-template-columns: minmax(180px, 1.05fr) minmax(140px, 1.3fr) 76px 84px;
+  grid-template-columns: minmax(180px, 1.05fr) minmax(140px, 1.3fr) 76px 84px 82px;
   align-items: center;
   gap: 14px;
   min-height: 46px;
@@ -817,20 +830,6 @@ html, body {
 .srow:hover { background: var(--c-raised); }
 .srow .vkey { font-size: 12px; }
 .srow .badge { justify-self: start; }
-
-.cmd {
-  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
-  font-size: 11px;
-  color: var(--c-text-secondary);
-  background: var(--c-raised);
-  border: 1px solid var(--c-hairline);
-  border-radius: 8px;
-  padding: 6px 9px;
-  max-width: 380px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .chip:focus-visible { outline: 2px solid rgba(71,194,230,.5); outline-offset: 1px; }
 .stat-value.small { font-size: 15px; }
@@ -872,15 +871,23 @@ body[data-host='win'] .tb-controls { display: flex; }
 .tb-btn:active { background: var(--c-panel-strong); }
 .tb-btn.close:active { background: #c50f1f; }
 
-/* MCP command block: single-column row, code takes the full width. */
-.setting.command { grid-template-columns: 1fr; }
+/* MCP wiring block: single-column row, the snippet takes the full width. */
+.setting.wide { grid-template-columns: 1fr; }
+.setting.wide .chips { display: inline-flex; margin-top: 10px; }
 .cmd-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-.cmd-row .cmd {
-  flex: 1;
-  max-width: none;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  font-size: 11.5px;
-}
 .cmd-row .btn { height: 34px; }
+
+.snippet {
+  margin: 10px 0 0;
+  padding: 11px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--c-hairline);
+  background: var(--c-panel-strong);
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--c-text-secondary);
+  white-space: pre;
+  overflow-x: auto;
+  user-select: text;
+}

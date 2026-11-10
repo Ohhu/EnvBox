@@ -38,6 +38,15 @@ type App struct {
 	env     envStore
 	shell   *shell.Integration
 	notify  func(string)
+
+	// dialog opens the native "choose a file" dialog. It is a field so tests can
+	// answer without a window, and nil means "this host cannot pick files".
+	dialog func() (string, error)
+	// pickMu guards the file chosen for import. The path never leaves the host:
+	// the page learns its name and size, and import reads what was picked.
+	pickMu          sync.Mutex
+	pendingImport   string
+	pendingImportAt time.Time
 }
 
 // envStore is the slice of the user environment the service needs. Keeping it
@@ -60,6 +69,9 @@ func NewApp(notify func(string)) (*App, error) {
 	}
 	return &App{store: store, env: winsys.NewConfigurableEnvStore(), shell: integration, notify: notify}, nil
 }
+
+// SetFilePicker wires the native file dialog the import flow uses.
+func (a *App) SetFilePicker(pick func() (string, error)) { a.dialog = pick }
 
 // maskedValue is what the list view shows for a secret. Posting it back must be
 // read as "unchanged", not "replace the secret with bullets".
@@ -138,6 +150,7 @@ type StateView struct {
 	Autostart   AutostartView    `json:"autostart"`
 	MCP         mcp.Policy       `json:"mcp"`
 	MCPCommand  string           `json:"mcpCommand"`
+	MCPClients  []mcp.Client     `json:"mcpClients"`
 	Warning     string           `json:"warning,omitempty"`
 }
 
@@ -149,9 +162,16 @@ type AutostartView struct {
 
 // Payload is what Dispatch returns to the frontend.
 type Payload struct {
-	OK      bool       `json:"ok"`
-	Message string     `json:"message,omitempty"`
-	State   *StateView `json:"state,omitempty"`
+	OK      bool   `json:"ok"`
+	Message string `json:"message,omitempty"`
+	// Value carries one plaintext answer (reveal) to a caller that asked for it
+	// by id, so /api/state can keep secrets masked.
+	Value string     `json:"value,omitempty"`
+	State *StateView `json:"state,omitempty"`
+	// Pick reports the file the dialog returned, for the import password sheet.
+	Pick *ImportPick `json:"pick,omitempty"`
+	// Focus is the profile the UI should select once the action finishes.
+	Focus string `json:"focus,omitempty"`
 }
 
 // State collects the full UI state under the service lock.
@@ -179,6 +199,7 @@ func (a *App) stateLocked() (*StateView, error) {
 		Shell:       a.shell.Status(),
 		MCP:         mcp.LoadPolicy(),
 		MCPCommand:  mcpCommand(),
+		MCPClients:  mcp.Clients(mcpHelperPath()),
 	}
 	if envErr != nil {
 		state.Warning = "无法读取用户环境变量：" + apperr.User(envErr)
@@ -283,6 +304,16 @@ func (a *App) Dispatch(action string, rawPayload string) (*Payload, error) {
 		return a.updateInstall()
 	case "export":
 		return a.exportProfiles(rawPayload)
+	case "duplicate-profile":
+		return a.duplicateProfile(rawPayload)
+	case "import-pick":
+		return a.pickImport()
+	case "import":
+		return a.importArchive(rawPayload)
+	case "copy":
+		return a.copyText(rawPayload)
+	case "reveal":
+		return a.revealVariable(rawPayload)
 	default:
 		return &Payload{OK: false, Message: "未知操作：" + action}, nil
 	}
@@ -570,6 +601,63 @@ func (a *App) shellAction(action string) (*Payload, error) {
 	return a.respondLocked("已移除 PowerShell 集成")
 }
 
+// secretClipboardTTL matches the macOS app: a secret stays on the clipboard
+// long enough to paste it, then goes away on its own.
+const secretClipboardTTL = 45 * time.Second
+
+// copyText owns the clipboard on the host side. Doing it here rather than with
+// navigator.clipboard lets a secret carry the clipboard formats that keep it out
+// of history and cloud sync before any other app can read it.
+func (a *App) copyText(raw string) (*Payload, error) {
+	var request struct {
+		Value     string `json:"value"`
+		Sensitive bool   `json:"sensitive"`
+	}
+	if err := decode(raw, &request); err != nil {
+		return a.fail(err)
+	}
+	if request.Value == "" {
+		return &Payload{OK: false, Message: "没有可复制的内容"}, nil
+	}
+	if err := winsys.CopyText(request.Value, request.Sensitive); err != nil {
+		return a.fail(err)
+	}
+	if !request.Sensitive {
+		return &Payload{OK: true, Message: "已复制"}, nil
+	}
+	text := request.Value
+	time.AfterFunc(secretClipboardTTL, func() { winsys.ClearClipboardIfEqual(text) })
+	return &Payload{OK: true, Message: "已复制，45 秒后自动清除"}, nil
+}
+
+// revealVariable answers with one plaintext value. The list view stays masked so
+// /api/state never hands out secrets nobody asked for.
+func (a *App) revealVariable(raw string) (*Payload, error) {
+	var request struct {
+		ID string `json:"id"`
+	}
+	if err := decode(raw, &request); err != nil {
+		return a.fail(err)
+	}
+	if request.ID == "" {
+		return &Payload{OK: false, Message: "缺少变量 ID"}, nil
+	}
+	a.vaultMu.Lock()
+	defer a.vaultMu.Unlock()
+	payload, err := a.store.Load()
+	if err != nil {
+		return a.fail(err)
+	}
+	for _, profile := range payload.Profiles {
+		for _, variable := range profile.Variables {
+			if variable.ID == request.ID {
+				return &Payload{OK: true, Value: variable.Value}, nil
+			}
+		}
+	}
+	return &Payload{OK: false, Message: "变量不存在或已被删除"}, nil
+}
+
 func (a *App) setMCP(raw string) (*Payload, error) {
 	var request struct {
 		Enabled     bool `json:"enabled"`
@@ -699,17 +787,30 @@ func systemVariables(entries []winsys.EnvEntry, payload *model.VaultPayload) []S
 	for _, key := range payload.AppliedKeys {
 		applied[strings.ToUpper(key)] = struct{}{}
 	}
+	// A key that any profile marks secret is concealed here as well. The name is
+	// only one kind of evidence: "fees" gives nothing away, the profile it was
+	// saved from does, and the value on this machine is the same secret.
+	marked := make(map[string]struct{})
+	for _, profile := range payload.Profiles {
+		for _, variable := range profile.Variables {
+			if variable.IsSecret {
+				marked[strings.ToUpper(variable.TrimmedKey())] = struct{}{}
+			}
+		}
+	}
 	out := make([]SystemVariable, 0, len(entries))
 	for _, entry := range entries {
 		if entry.Value == "" && entry.Expanded == "" {
 			continue
 		}
-		_, isApplied := applied[strings.ToUpper(entry.Name)]
+		upper := strings.ToUpper(entry.Name)
+		_, isApplied := applied[upper]
+		_, isMarked := marked[upper]
 		out = append(out, SystemVariable{
 			Key:       entry.Name,
 			Value:     entry.Expanded,
 			Kind:      kindOf(entry.Type),
-			Sensitive: isSensitive(entry.Name),
+			Sensitive: isSensitive(entry.Name) || isMarked,
 			Applied:   isApplied,
 		})
 	}
@@ -788,14 +889,18 @@ func updateView(current string) UpdateView {
 	return view
 }
 
-// mcpCommand is the command line MCP clients should spawn.
-func mcpCommand() string {
+// mcpHelperPath is the binary MCP clients spawn; the "mcp" argument turns it
+// into the stdio server.
+func mcpHelperPath() string {
 	exe, err := winsys.ExecutablePath()
 	if err != nil {
-		return "envbox.exe mcp"
+		return "envbox.exe"
 	}
-	return filepath.Join(filepath.Dir(exe), "bin", "envbox.exe") + " mcp"
+	return filepath.Join(filepath.Dir(exe), "bin", "envbox.exe")
 }
+
+// mcpCommand is the command line MCP clients should spawn.
+func mcpCommand() string { return mcpHelperPath() + " mcp" }
 
 func decode(raw string, target any) error {
 	if strings.TrimSpace(raw) == "" {

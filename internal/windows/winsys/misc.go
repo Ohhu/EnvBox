@@ -237,7 +237,7 @@ func ListenForQuit() (quit <-chan struct{}, stop func(), err error) {
 	// the installer sets it again while the window is still closing.
 	handle, _, callErr := procCreateEvent.Call(0, 1, 0, uintptr(unsafe.Pointer(name)))
 	if handle == 0 {
-		return nil, nil, fmt.Errorf("winsys: 无法创建退出信号：%v", callErr)
+		return nil, nil, fmt.Errorf("winsys: 无法创建退出信号：%w", callErr)
 	}
 	signal := make(chan struct{})
 	go func() {

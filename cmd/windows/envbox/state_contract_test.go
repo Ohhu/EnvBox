@@ -29,7 +29,7 @@ func TestStateViewJSONContract(t *testing.T) {
 			t.Errorf("warning 存在但不是字符串：%T", value)
 		}
 	}
-	for _, key := range []string{"version", "channel", "installed", "profiles", "system", "settings", "update", "shell", "mcp", "mcpCommand", "autostart", "appliedKeys"} {
+	for _, key := range []string{"version", "channel", "installed", "profiles", "system", "settings", "update", "shell", "mcp", "mcpCommand", "mcpClients", "autostart", "appliedKeys"} {
 		if _, ok := decoded[key]; !ok {
 			t.Errorf("state 缺少字段 %q", key)
 		}

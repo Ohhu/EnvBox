@@ -217,6 +217,46 @@ type fakeEnv struct {
 	removed []string
 }
 
+func TestStateMasksSecretsUntilReveal(t *testing.T) {
+	app := newTestApp(t)
+	state, err := app.State()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, variable := range state.Profiles[0].Variables {
+		if variable.Key == "API_TOKEN" && variable.Value != maskedValue {
+			t.Fatalf("列表不该出现明文：%q", variable.Value)
+		}
+	}
+
+	answer, err := app.Dispatch("reveal", mustJSON(t, map[string]any{"id": "v1"}))
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if !answer.OK || answer.Value != "real-secret" {
+		t.Fatalf("明文字段没回来：%+v", answer)
+	}
+
+	unknown, err := app.Dispatch("reveal", mustJSON(t, map[string]any{"id": "gone"}))
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if unknown.OK {
+		t.Fatal("未知变量应当报错")
+	}
+}
+
+func TestCopyRejectsEmptyValue(t *testing.T) {
+	app := newTestApp(t)
+	answer, err := app.Dispatch("copy", mustJSON(t, map[string]any{"value": "", "sensitive": true}))
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if answer.OK {
+		t.Fatal("空内容不该占用剪贴板")
+	}
+}
+
 func (f *fakeEnv) List() ([]winsys.EnvEntry, error) { return nil, nil }
 
 func (f *fakeEnv) Apply(model.EnvProfile, []string) (winsys.ApplyReport, error) {
@@ -294,5 +334,41 @@ func TestSystemVariablesMarksSensitive(t *testing.T) {
 	vars := systemVariables([]winsys.EnvEntry{{Name: "API_TOKEN", Value: "x", Expanded: "x", Type: winsys.RegSZ}}, &model.VaultPayload{})
 	if len(vars) != 1 || !vars[0].Sensitive {
 		t.Fatalf("令牌类变量应标记为敏感：%+v", vars)
+	}
+}
+
+func TestSystemVariablesHonourProfileSecrets(t *testing.T) {
+	app := newTestApp(t)
+	payload, err := app.store.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	entries := []winsys.EnvEntry{
+		{Name: "fees", Value: "13456789", Expanded: "13456789"},
+		{Name: "OA", Value: "bpm_query", Expanded: "bpm_query"},
+		{Name: "REGION", Value: "cn", Expanded: "cn"},
+		{Name: "API_TOKEN", Value: "s3cret", Expanded: "s3cret"},
+	}
+	// "fees" and "OA" carry nothing sensitive in their names, but the profile the
+	// user saved them from marks them secret; the live value is the same secret.
+	payload.Profiles[0].Variables = append(payload.Profiles[0].Variables,
+		model.EnvVariable{ID: "v9", Key: "fees", Value: "13456789", IsSecret: true},
+		model.EnvVariable{ID: "v10", Key: "OA", Value: "bpm_query", IsSecret: true},
+	)
+
+	sensitive := map[string]bool{}
+	for _, variable := range systemVariables(entries, payload) {
+		sensitive[variable.Key] = variable.Sensitive
+	}
+	for _, key := range []string{"fees", "OA"} {
+		if !sensitive[key] {
+			t.Fatalf("%s must be concealed: its profile entry is secret", key)
+		}
+	}
+	if !sensitive["API_TOKEN"] {
+		t.Fatal("the name heuristic must keep working")
+	}
+	if sensitive["REGION"] {
+		t.Fatal("REGION contains no secret")
 	}
 }

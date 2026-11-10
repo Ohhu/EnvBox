@@ -6,7 +6,8 @@
 ;   * 唯一的正式分发形态就是安装器：不做便携版，不做 MSIX
 ;     （MSIX 容器化会拦注册表直写与 WM_SETTINGCHANGE 广播，正好是产品的全部功能）
 ;   * 每用户安装（PrivilegesRequired=lowest），不需要管理员权限，卸载也不需要
-;   * 覆盖安装时由安装器通过具名事件通知正在运行的 EnvBox 退出，不让用户手动关托盘程序
+;   * 覆盖安装时由安装器通过具名事件通知正在运行的 EnvBox 退出，并结束占用 bin\envbox.exe 的
+;     MCP 子进程（编辑器/Agent 会把 CLI 当 stdio 服务器常驻，不结束就会在 DeleteFile 上拿到 5）
 ;   * 安装界面跟随 Windows 显示语言（中文系统中文，其余英文），不弹语言选择页
 ;   * 不写任何环境变量、不写自启动项、不装 Shell 集成：这三样都碰 HKCU\Environment 或用户 profile，
 ;     必须由 App 自己用注册表 API 维护（保住 REG_EXPAND_SZ、可去重、可撤销）
@@ -113,6 +114,8 @@ Filename: "{app}\bin\envbox.exe"; Parameters: "uninstall-cleanup"; Flags: runhid
 [CustomMessages]
 en.EnvBoxStillRunning=The installer needs to replace EnvBox's files, but EnvBox is still running.%n%nClose EnvBox from its notification-area icon, then choose Retry.
 zh.EnvBoxStillRunning=安装程序需要覆盖 EnvBox 的程序文件，但 EnvBox 仍在运行。%n%n请从通知区域图标退出 EnvBox，然后选择“重试”。
+en.EnvBoxHelperLocked=Setup could not replace %1 because it is still running.%n%nAn editor or agent is using EnvBox's MCP server (envbox.exe). Quit that program - or end envbox.exe in Task Manager - then choose Retry.
+zh.EnvBoxHelperLocked=安装程序无法替换 %1：它仍在运行。%n%n有编辑器或 Agent 正在使用 EnvBox 的 MCP 服务（envbox.exe）。请退出该程序，或在任务管理器里结束 envbox.exe，然后选择“重试”。
 
 [Code]
 { EnvBox lives in the notification area, so it keeps running after the window is
@@ -127,6 +130,8 @@ zh.EnvBoxStillRunning=安装程序需要覆盖 EnvBox 的程序文件，但 EnvB
 const
   EnvBoxMutexName = 'EnvBox-SingleInstance-5C1F7C2E';
   QuitWaitMilliseconds = 5000;
+  HelperReleaseMilliseconds = 5000;
+  UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{5C1F7C2E-8A4B-4E6D-9F31-2B7D6A0C4E11}_is1';
 
 function EnvBoxIsRunning(): Boolean;
 begin
@@ -136,6 +141,19 @@ end;
 { The installed EnvBox.exe. Expanding the app-dir constant before the wizard
   exists aborts Setup with a runtime error, so it is only touched once the caller
   says it is safe; until then the previous uninstall entry is the only source. }
+{ The install folder from the previous run. The uninstall key is AppId plus the
+  _is1 suffix, with the literal braces that the setup section escapes by doubling
+  the opening one. Spelled out on purpose: SetupSetting("AppId") hands back the
+  escaped form. }
+function RegistryAppDir(): String;
+var
+  InstallPath: String;
+begin
+  Result := '';
+  if RegQueryStringValue(HKCU, UninstallKey, 'Inno Setup: App Path', InstallPath) then
+    Result := InstallPath;
+end;
+
 function EnvBoxExePath(AppDirReady: Boolean): String;
 var
   Candidate: String;
@@ -153,12 +171,35 @@ begin
   end;
   { No default-folder guess here: the previous uninstall entry is the only source
     that is both reliable and cheap this early. }
-  { The uninstall key is AppId plus the _is1 suffix, with the literal braces that
-    the setup section escapes by doubling the opening one. Spelled out on
-    purpose: SetupSetting("AppId") hands back the escaped form. }
-  if RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{5C1F7C2E-8A4B-4E6D-9F31-2B7D6A0C4E11}_is1', 'Inno Setup: App Path', InstallPath) then
+  InstallPath := RegistryAppDir();
+  if InstallPath <> '' then
   begin
     Candidate := InstallPath + '\{#AppExe}';
+    if FileExists(Candidate) then
+      Result := Candidate;
+  end;
+end;
+
+{ The CLI/MCP helper, the file MCP clients keep alive. }
+function EnvBoxHelperPath(AppDirReady: Boolean): String;
+var
+  Candidate: String;
+  InstallPath: String;
+begin
+  Result := '';
+  if AppDirReady then
+  begin
+    Candidate := ExpandConstant('{app}\bin\envbox.exe');
+    if FileExists(Candidate) then
+    begin
+      Result := Candidate;
+      Exit;
+    end;
+  end;
+  InstallPath := RegistryAppDir();
+  if InstallPath <> '' then
+  begin
+    Candidate := InstallPath + '\bin\envbox.exe';
     if FileExists(Candidate) then
       Result := Candidate;
   end;
@@ -221,6 +262,64 @@ begin
   end;
 end;
 
+{ MCP clients (Claude Code, DSH, editors) keep "envbox.exe mcp" alive as a stdio
+  server, and Windows refuses to delete a running executable, so the upgrade used
+  to stop at "DeleteFile failed; code 5" on the installed bin\envbox.exe. Setup
+  ends those helpers first; the client starts a fresh one on its next tool call. }
+procedure TerminateHelperProcesses();
+var
+  ResultCode: Integer;
+begin
+  { taskkill returns 128 when nothing matches, which is the normal case. }
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM envbox.exe /T', '', SW_HIDE,
+    ewWaitUntilTerminated, ResultCode);
+end;
+
+{ Makes Path replaceable. Killing the process is not enough on its own: the image
+  stays mapped for a moment, so the delete is retried. A process that still holds
+  it is worked around by renaming the file aside - Windows allows renaming a
+  running executable, only deleting it fails - and [Files] then writes a new one. }
+function FreeFileForReplace(const Path: String): Boolean;
+var
+  Elapsed: Integer;
+  Attempt: Integer;
+  Aside: String;
+begin
+  Result := True;
+  if not FileExists(Path) then
+    Exit;
+  if DeleteFile(Path) then
+    Exit;
+  TerminateHelperProcesses();
+  Elapsed := 0;
+  while Elapsed < HelperReleaseMilliseconds do
+  begin
+    Sleep(100);
+    Elapsed := Elapsed + 100;
+    if DeleteFile(Path) then
+      Exit;
+  end;
+  for Attempt := 1 to 5 do
+  begin
+    Aside := Path + '.old' + IntToStr(Attempt);
+    if FileExists(Aside) then
+      DeleteFile(Aside);
+    if not FileExists(Aside) and RenameFile(Path, Aside) then
+      Exit;
+  end;
+  Result := False;
+end;
+
+{ An image renamed aside while its process still runs cannot be deleted yet; the
+  next install sweeps whatever is left over. }
+procedure CleanAsideCopies(const Path: String);
+var
+  Attempt: Integer;
+begin
+  for Attempt := 1 to 5 do
+    DeleteFile(Path + '.old' + IntToStr(Attempt));
+end;
+
 { Ask the app to leave as soon as the wizard exists, but do not block the first
   page waiting for it: PrepareToInstall does the waiting. No prompts here either.
   The app-dir constant is still off limits (only the registry path is used), which
@@ -233,14 +332,34 @@ begin
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Helper: String;
 begin
   Result := '';
   if not CloseRunningEnvBox(True) then
+  begin
     Result := CustomMessage('EnvBoxStillRunning');
+    Exit;
+  end;
+  Helper := ExpandConstant('{app}\bin\envbox.exe');
+  if not FreeFileForReplace(Helper) then
+    Result := FmtMessage(CustomMessage('EnvBoxHelperLocked'), [Helper]);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+  begin
+    CleanAsideCopies(ExpandConstant('{app}\{#AppExe}'));
+    CleanAsideCopies(ExpandConstant('{app}\bin\envbox.exe'));
+  end;
 end;
 
 { Uninstaller: resolve through the registry, the uninstall log owns the folder. }
 function InitializeUninstall(): Boolean;
 begin
+  { Same reason as an upgrade: a helper that is still running keeps the file open,
+    and the uninstaller would leave bin\envbox.exe behind. }
+  TerminateHelperProcesses();
   Result := CloseRunningEnvBox(False);
 end;

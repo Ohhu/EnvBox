@@ -3,6 +3,7 @@
 package winsys
 
 import (
+	"errors"
 	"strings"
 	"syscall"
 	"testing"
@@ -230,6 +231,10 @@ func TestDPAPIRoundTrip(t *testing.T) {
 func TestQuitSignalReachesListener(t *testing.T) {
 	signal, stop, err := ListenForQuit()
 	if err != nil {
+		// A running release build owns this event at a higher integrity level.
+		if errors.Is(err, syscall.ERROR_ACCESS_DENIED) {
+			t.Skipf("退出信号被运行中的 EnvBox 持有且当前上下文无权访问：%v", err)
+		}
 		t.Fatalf("listen: %v", err)
 	}
 	defer stop()

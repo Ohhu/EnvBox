@@ -16,6 +16,7 @@ import (
 type stubEnv struct {
 	values    map[string]string
 	lastCmd   string
+	lastOpts  appenv.ExecuteOptions
 	exitCode  int
 	describeK []string
 }
@@ -37,8 +38,9 @@ func (s *stubEnv) Describe(keys []string) (*appenv.Description, error) {
 	return desc, nil
 }
 
-func (s *stubEnv) Execute(_ context.Context, command string, _ time.Duration) (*appenv.Result, error) {
+func (s *stubEnv) Execute(_ context.Context, command string, _ time.Duration, options appenv.ExecuteOptions) (*appenv.Result, error) {
 	s.lastCmd = command
+	s.lastOpts = options
 	return &appenv.Result{ExitCode: s.exitCode, Stdout: []byte("ok:" + command)}, nil
 }
 
@@ -158,6 +160,19 @@ func TestExecPassesCommandAndReportsExit(t *testing.T) {
 	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
 	if !strings.Contains(text, `"exit":3`) {
 		t.Fatalf("unexpected payload %s", text)
+	}
+}
+
+func TestExecForwardsLoginAndReportsGeneration(t *testing.T) {
+	env := &stubEnv{values: map[string]string{"A": "1"}}
+	server := newServer(env, Policy{Enabled: true})
+	output := run(t, server, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"env_exec","arguments":{"command":"echo hi","login":true}}}`)
+	if !env.lastOpts.Login {
+		t.Fatal("login 未透传到 Execute")
+	}
+	text := decodeAll(t, output)[0]["result"].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string)
+	if !strings.Contains(text, `"generation":"abc123def456"`) {
+		t.Fatalf("generation 缺失：%s", text)
 	}
 }
 

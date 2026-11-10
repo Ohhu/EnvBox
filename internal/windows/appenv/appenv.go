@@ -23,6 +23,7 @@ import (
 
 	"github.com/Ohhu/EnvBox/internal/core/model"
 	"github.com/Ohhu/EnvBox/internal/windows/vault"
+	"github.com/Ohhu/EnvBox/internal/windows/winsys"
 )
 
 // DefaultMaxOutputBytes caps captured stdout/stderr per stream.
@@ -160,14 +161,54 @@ func (p *Provider) Value(key string) (string, bool, error) {
 	return "", false, nil
 }
 
+// ExecuteOptions tunes one command run.
+type ExecuteOptions struct {
+	// Login rebuilds the user environment from the registry first: the Windows
+	// stand-in for a login shell, so values other programs changed after EnvBox
+	// started are picked up the way a newly opened terminal sees them.
+	Login bool
+}
+
 // MergedEnvironment layers the active profile over the current process environment.
 // Windows compares variable names case-insensitively, so the key is upper case.
-func (p *Provider) MergedEnvironment() ([]string, error) {
+func (p *Provider) MergedEnvironment() ([]string, error) { return p.Environment(false) }
+
+// Environment is MergedEnvironment with the login switch exposed, so the CLI can
+// offer the same flag as the macOS helper.
+func (p *Provider) Environment(login bool) ([]string, error) { return p.environment(login) }
+
+func (p *Provider) environment(login bool) ([]string, error) {
 	profile, _, err := p.Active()
 	if err != nil {
 		return nil, err
 	}
-	return MergeEnvironment(os.Environ(), profile), nil
+	base := os.Environ()
+	if login {
+		base = append(base, registryEnvironment()...)
+	}
+	return MergeEnvironment(base, profile), nil
+}
+
+// registryEnvironment reads the user's variables as a process started right now
+// would receive them. An unreadable registry is not fatal: the inherited
+// environment still runs the command, it just may carry stale values.
+func registryEnvironment() []string {
+	entries, err := winsys.NewUserEnvStore().List()
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Name == "" {
+			continue
+		}
+		value := entry.Expanded
+		if value == "" {
+			value = entry.Value
+		}
+		out = append(out, entry.Name+"="+value)
+	}
+	return out
 }
 
 // MergeEnvironment is exported so tests and the CLI share one implementation.
@@ -206,14 +247,14 @@ func MergeEnvironment(base []string, profile *model.EnvProfile) []string {
 // The command string is passed to `cmd /d /s /c`, which is the same shell an
 // MCP client would get from a terminal, so pipelines and redirection behave as
 // the user expects. Output is captured with a hard cap.
-func (p *Provider) Execute(ctx context.Context, command string, timeout time.Duration) (*Result, error) {
+func (p *Provider) Execute(ctx context.Context, command string, timeout time.Duration, options ExecuteOptions) (*Result, error) {
 	if strings.TrimSpace(command) == "" {
 		return nil, errors.New("appenv: 缺少 command")
 	}
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	env, err := p.MergedEnvironment()
+	env, err := p.environment(options.Login)
 	if err != nil {
 		return nil, err
 	}

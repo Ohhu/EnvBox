@@ -15,6 +15,11 @@ All notable changes to EnvBox are documented here.
 - `.envbox` export from the GUI and `envbox import` (CLI) for macOS-originated archives.
 - Opt-out self-update from GitHub Releases with digest cross-check, Authenticode signer pinning and a manual-download fallback for unsigned builds.
 - PowerShell integration through a managed `$PROFILE` block plus an `active.ps1` snapshot.
+- Settings → MCP now matches macOS: pick a client (通用 JSON / Claude Code / DSH), see the full snippet, then copy the snippet or a ready-made agent prompt.
+- Importing a `.envbox` from the GUI: pick the file with the native dialog, type the password, and the profiles are appended. Name and ID clashes are resolved the way macOS does it (suffix, re-key, never overwrite), and the imported profile is selected afterwards.
+- Duplicate a profile from its detail page: the copy is named `名称 副本` and numbered when that name is taken.
+- Export a single profile from its detail page; 导出全部配置 stays in Settings.
+- `env_exec` accepts the macOS `login` argument and reports `generation` in its result. Windows has no login shell, so `login` re-reads the user environment from the registry first — the closest equivalent of a freshly opened terminal. `envbox exec --login` exposes the same switch.
 
 ### Changed (Windows)
 
@@ -30,6 +35,13 @@ All notable changes to EnvBox are documented here.
 - Destructive confirmations and the export passphrase use in-app dialogs; the WebView2 chrome dialog titled `wails.localhost 显示` is gone.
 - Deleting the active profile first removes its variables from the user environment, so no orphaned keys stay behind.
 - Clicking 取消 inside a sheet or dialog closes it again.
+- Every variable row has the two copy actions macOS has: 复制变量名 (tag icon) and 复制值, on both the system list and a profile; the system list also gets a per-row 显示值 toggle instead of only the page-wide switch.
+- Revealing or copying a secret no longer yields bullets: the list keeps secrets masked on the wire, the eye button asks the host for that one value, and the edit sheet opens with the real text.
+- Copying a secret marks the clipboard so Windows history and cloud sync skip it, then clears it after 45 seconds — the same deal macOS already offered.
+- The system list conceals a variable whose key any profile marks secret, not only ones whose name looks like a secret: a value saved as `fees` is masked, gets the reveal toggle, and counts as sensitive.
+- The sidebar's system row is as wide as a profile row: as a block-level button it shrink-wrapped its content, so its hover highlight stopped 65px short of the selection pill behind it.
+- Columns line up again: the action cell is a fixed width (a row with a reveal button used to widen it and shift its value, type and source cells), the row buttons no longer inherit `margin-left: auto` from the standalone utility button (which split the leftover space and left two-button rows 14px off), and the lock icon sits in a reserved slot so a masked key starts at the same x as every other key.
+- Upgrading no longer stops at "DeleteFile failed; code 5" on `bin\envbox.exe`: Setup ends any `envbox.exe` still running as an MCP server before it replaces files, waits for the image to be released, and falls back to renaming the file aside if a process still holds it. The uninstaller got the same treatment.
 
 ## [1.1.0] - 2026-10-31
 

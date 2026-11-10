@@ -15,7 +15,7 @@ import (
 // Environment is the subset of appenv.Provider the tools need; tests supply a stub.
 type Environment interface {
 	Describe(keys []string) (*appenv.Description, error)
-	Execute(ctx context.Context, command string, timeout time.Duration) (*appenv.Result, error)
+	Execute(ctx context.Context, command string, timeout time.Duration, options appenv.ExecuteOptions) (*appenv.Result, error)
 	Value(key string) (string, bool, error)
 }
 
@@ -35,13 +35,17 @@ func ToolDescriptors() []map[string]any {
 		},
 		{
 			"name":        "env_exec",
-			"description": "用当前激活配置的环境执行命令，返回退出码、stdout、stderr 与超时/截断标记。",
+			"description": "用当前激活配置的环境执行命令，返回退出码、stdout、stderr、配置版本与超时/截断标记。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"command":        map[string]any{"type": "string"},
 					"requiredKeys":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 					"timeoutSeconds": map[string]any{"type": "number"},
+					// Same argument as the macOS build. There is no login shell on
+					// Windows, so it re-reads the user environment from the registry
+					// instead of falling back to the one this process inherited.
+					"login": map[string]any{"type": "boolean", "description": "先从注册表重读用户环境变量再执行（Windows 上没有登录 Shell）"},
 				},
 				"required": []string{"command"},
 			},
@@ -122,6 +126,7 @@ func (s *Server) execute(raw json.RawMessage) toolResult {
 		Command        string   `json:"command"`
 		RequiredKeys   []string `json:"requiredKeys"`
 		TimeoutSeconds float64  `json:"timeoutSeconds"`
+		Login          bool     `json:"login"`
 	}
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &args); err != nil {
@@ -148,20 +153,27 @@ func (s *Server) execute(raw json.RawMessage) toolResult {
 	}
 
 	timeout := time.Duration(args.TimeoutSeconds * float64(time.Second))
-	result, err := s.Env.Execute(context.Background(), args.Command, timeout)
+	result, err := s.Env.Execute(context.Background(), args.Command, timeout, appenv.ExecuteOptions{Login: args.Login})
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return toolResult{text: jsonText(map[string]any{"error": "执行超时", "timedOut": true}), isError: true}
 		}
 		return toolResult{text: jsonText(map[string]any{"error": err.Error()}), isError: true}
 	}
+	// The macOS build reports the configuration generation alongside the output so
+	// a caller can tell whether the environment changed between two runs.
+	generation := ""
+	if description, err := s.Env.Describe(nil); err == nil {
+		generation = description.Generation
+	}
 	return toolResult{
 		text: jsonText(map[string]any{
-			"exit":      result.ExitCode,
-			"stdout":    string(result.Stdout),
-			"stderr":    string(result.Stderr),
-			"truncated": result.Truncated,
-			"timedOut":  result.TimedOut,
+			"generation": generation,
+			"exit":       result.ExitCode,
+			"stdout":     string(result.Stdout),
+			"stderr":     string(result.Stderr),
+			"truncated":  result.Truncated,
+			"timedOut":   result.TimedOut,
 		}),
 		isError: result.ExitCode != 0 || result.TimedOut,
 	}

@@ -17,6 +17,49 @@ function makeVariable(id, key, value, options) {
   };
 }
 
+// The demo host pretends to be an installed build.
+const DEMO_HELPER = "C:\\Users\\dev\\AppData\\Local\\Programs\\EnvBox\\bin\\envbox.exe";
+
+// Mirrors internal/windows/mcp/wiring.go (and MCPPolicy.swift on macOS) so the
+// preview shows the same presets the real settings screen renders.
+function mcpClients(helper) {
+  const json = [
+    "{",
+    '  "mcpServers": {',
+    '    "envbox": {',
+    '      "command": ' + JSON.stringify(helper) + ",",
+    '      "args": ["mcp"]',
+    "    }",
+    "  }",
+    "}"
+  ].join("\n");
+  const claude = "claude mcp add envbox -- " + JSON.stringify(helper) + " mcp";
+  const dsh = [
+    "- insert:",
+    "    - id: envbox-mcp",
+    "      name: '@deepseek-ai/dsh-mcp-client'",
+    "      config:",
+    "        serverName: envbox",
+    "        transport: stdio",
+    "        command: " + helper,
+    "        args: [mcp]"
+  ].join("\n");
+  function preset(id, name, label, target, snippet) {
+    return {
+      id: id,
+      name: name,
+      snippetLabel: label,
+      snippet: snippet,
+      prompt: "将以下 MCP 服务器加入" + target + "，并调用 env_describe 验证。\n\n" + snippet
+    };
+  }
+  return [
+    preset("generic", "通用 JSON", "复制 JSON", "你当前的 MCP 配置", json),
+    preset("claudeCode", "Claude Code", "复制命令", "Claude Code 的 MCP 配置", claude),
+    preset("dsh", "DSH", "复制 YAML", "~/.dsh/cordis.patch.yml", dsh)
+  ];
+}
+
 function demoState() {
   return {
     version: "1.4.0",
@@ -103,9 +146,21 @@ function demoState() {
     shell: { installed: true, profilePath: "%USERPROFILE%\\Documents\\PowerShell\\Microsoft.PowerShell_profile.ps1" },
     autostart: { enabled: true },
     mcp: { enabled: true, allowReveal: false },
-    mcpCommand: "envbox.exe mcp --stdio",
+    mcpCommand: DEMO_HELPER + " mcp",
+    mcpClients: mcpClients(DEMO_HELPER),
     warning: ""
   };
+}
+
+// uniqueName mirrors the host: append " 2", " 3"… until the name is free.
+function uniqueName(proposed, profiles) {
+  const base = String(proposed || "").trim() || "未命名配置";
+  const taken = new Set(profiles.map(function (p) { return p.name.trim().toLowerCase(); }));
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let index = 2; ; index += 1) {
+    const candidate = base + " " + index;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
 }
 
 export class DemoBackend {
@@ -123,6 +178,8 @@ export class DemoBackend {
     const profile = payload && payload.id ? data.profiles.find(function (p) { return p.id === payload.id; }) : null;
     let message = "已保存";
     let ok = true;
+    let value;
+    let focus = "";
 
     if (action === "apply" && profile) {
       data.profiles.forEach(function (item) { item.active = false; });
@@ -162,6 +219,18 @@ export class DemoBackend {
         }
         message = "配置已保存";
       }
+    } else if (action === "reveal" && payload) {
+      let found = null;
+      data.profiles.forEach(function (p) {
+        p.variables.forEach(function (v) { if (v.id === payload.id) found = v; });
+      });
+      if (found) {
+        value = found.value;
+        message = "";
+      } else {
+        ok = false;
+        message = "变量不存在或已被删除";
+      }
     } else if (action === "delete-profile" && payload) {
       data.profiles = data.profiles.filter(function (p) { return p.id !== payload.id; });
       if (data.activeId === payload.id) { data.activeId = ""; data.appliedKeys = []; }
@@ -192,6 +261,36 @@ export class DemoBackend {
     } else if (action === "update-install") {
       message = "演示模式下不执行安装";
       ok = false;
+    } else if (action === "duplicate-profile" && profile) {
+      const source = data.profiles.find(function (p) { return p.id === payload.id; });
+      if (!source) {
+        ok = false;
+        message = "找不到要复制的配置";
+      } else {
+        const copy = structuredClone(source);
+        copy.id = "p" + Date.now().toString(36);
+        copy.name = uniqueName(source.name + " 副本", data.profiles);
+        copy.active = false;
+        copy.updatedAt = nowISO();
+        copy.variables.forEach(function (v, i) { v.id = copy.id + "v" + i; });
+        data.profiles.push(copy);
+        message = "已复制配置：" + copy.name;
+        focus = copy.id;
+      }
+    } else if (action === "import-pick") {
+      // Demo: show the password sheet with a plausible file, so the flow can be
+      // reviewed without a native dialog. The import itself stays unavailable.
+      message = "";
+      focus = "";
+      return {
+        ok: true,
+        message: "",
+        pick: { name: "envbox-20261109-143000.envbox", bytes: 2048 },
+        state: structuredClone(this.data)
+      };
+    } else if (action === "import") {
+      message = "演示模式下不导入文件";
+      ok = false;
     } else if (action === "export") {
       message = "演示模式下不生成导出文件";
       ok = false;
@@ -200,6 +299,6 @@ export class DemoBackend {
       ok = false;
     }
 
-    return { ok: ok, message: message, state: structuredClone(this.data) };
+    return { ok: ok, message: message, value: value, focus: focus, state: structuredClone(this.data) };
   }
 }

@@ -141,6 +141,19 @@ func main() {
 		},
 	})
 
+	// The import flow asks for a file with the native picker. It is attached to
+	// the window at call time because the window is created further down.
+	service.SetFilePicker(func() (string, error) {
+		dialog := app.Dialog.OpenFile().
+			SetTitle("导入 EnvBox 配置").
+			AddFilter("EnvBox 归档 (*.envbox)", "*.envbox").
+			SetButtonText("导入")
+		if mainWindow != nil {
+			dialog = dialog.AttachToWindow(mainWindow)
+		}
+		return dialog.PromptForSingleSelection()
+	})
+
 	startURL := "/"
 	// Screenshot helpers for development only; release builds ignore them.
 	if view := os.Getenv("ENVBOX_START_VIEW"); view != "" && buildinfo.Channel != "production" {

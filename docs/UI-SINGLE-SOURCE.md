@@ -94,6 +94,40 @@
 `dialog-cancel`）。合成一个动作时，要么「取消」被"点在面板内部"的守卫吞掉，要么点面板正文
 就把面板关了。
 
+## 敏感值
+
+界面默认不知道明文：`/api/state` 里 secret 变量的值就是掩码，只有用户点了眼睛才按 id 取回一条。
+
+| 动作 | 走法 |
+| --- | --- |
+| 点眼睛 | `reveal {id}`，结果缓存进 `state.plain`，这一行才显示明文 |
+| 复制变量名 | `copy {value, sensitive:false}`，交出去的是 `key` 本身，不碰明文 |
+| 复制值 | `copy {value, sensitive}`，由宿主写剪贴板 |
+| 编辑 | 打开抽屉前先 `reveal`，输入框里是明文而不是圆点 |
+| 保存 | 明文原样回传；万一回传的仍是掩码，宿主按「未修改」处理 |
+
+行内两个复制按钮与 macOS 一致：`tag` 复制变量名（多数场景要的是把变量名贴进命令，而不是吐出一个密钥），
+`copy` 复制值。系统环境的行同样有这两个动作，敏感行还各自带一个显示/隐藏，而不是只有页头的总开关。
+
+复制必须走宿主，不能只靠 `navigator.clipboard`：macOS 要打 `org.nspasteboard.ConcealedType`，
+Windows 要打 `CanIncludeInClipboardHistory` / `CanUploadToCloudClipboard` /
+`ExcludeClipboardContentFromMonitorProcessing`，两端都在 45 秒后清除（且仅当剪贴板内容没被换掉）。
+浏览器预览没有后端，自动退回 `navigator.clipboard`，只是缺这几个标记。
+
+## 数据迁移
+
+导入导出都在设置页「数据」里，但**文件始终在宿主手里**：
+
+| 动作 | 走法 |
+| --- | --- |
+| 导入 | `import-pick` 让宿主弹原生文件框；回调只回传文件名与字节数，路径不出宿主。密码确认后 `import {passphrase}` 由宿主读取那个文件 |
+| 合并 | 重名自动改名（`名称 2`）、配置与变量 ID 重新生成；本地既有配置一字不改 |
+| 导出全部 | `export {passphrase}` |
+| 导出单个 | 配置详情页的下载按钮，`export {passphrase, ids:[id]}`——host 的 `ids` 一直是支持的，只是界面现在才用上 |
+
+页面拿不到路径，所以浏览器预览里做不了真实导入：演示后端会返回一个假文件让密码弹窗可以评审，
+真正点「导入」会明确提示演示模式不支持。
+
 ## 预览 / 截图
 
 ```bash
@@ -123,13 +157,14 @@ URL 参数：
 
 ## 尚未完成（接入 macOS 之前的清单）
 
-1. **AppModel 适配器**：在 `Sources/EnvBoxUI/WebUI` 里实现 `WebUIBridge`，把 14 个 action 映射到现有 `AppModel` 方法；
+1. **AppModel 适配器**：在 `Sources/EnvBoxUI/WebUI` 里实现 `WebUIBridge`，把 `Dispatch` 的全部 action（当前 21 个）映射到现有 `AppModel` 方法；
    目前宿主只有协议与路由，没有业务映射。
 2. **入口切换**：`EnvBoxScene` 里用环境变量开关（`ENVBOX_WEB_UI=1`）在 `RootView`（SwiftUI）
    与 `WebUIView` 之间切换，保证可回退、可并行对比。
 3. ~~打包资源~~：已由 `Scripts/macos/build-app.sh` 的 `cp -R shared/ui/assets "$APP/Contents/Resources/web"` 完成。
-4. **平台能力补齐**：托盘弹层（`NSStatusItem` + 无边框窗口）、快捷键菜单、敏感值 45 秒清屏、
-   剪贴板私有类型——这些不能由 Web 层提供，需要在宿主里保留。
+4. **平台能力补齐**：托盘弹层（`NSStatusItem` + 无边框窗口）、快捷键菜单——这些不能由 Web 层提供，需要在宿主里保留。
+   敏感值的读取、剪贴板私有标记与 45 秒清除已按这个分工落到宿主：Windows 侧是 `winsys.CopyText` /
+   `App.revealVariable`，macOS 侧沿用 `ClipboardService`。
 5. **截图回归**：把 `docs/ui-web` 的四张图作为基线，补一个脚本在改动后重拍并比对。
 
 ## 已知风险
